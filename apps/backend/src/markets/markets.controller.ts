@@ -20,6 +20,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
+import { UseInterceptors } from '@nestjs/common';
 
 @Controller('markets')
 export class MarketsController {
@@ -44,7 +46,9 @@ export class MarketsController {
    */
   @Get()
   @Public()
+  @UseInterceptors(CacheInterceptor)
   findAll(@Query() query: QueryMarketDto) {
+    // Кэширование реализовано на уровне сервиса
     return this.marketsService.findAll(query);
   }
 

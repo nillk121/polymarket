@@ -1,0 +1,509 @@
+;; Liquidity Pool Smart Contract for TON
+;; Supports LMSR and Constant Product AMM models
+;; Handles fees and liquidity management
+
+#include "imports/stdlib.fc";
+
+;; ============================================
+;; Constants
+;; ============================================
+
+;; Operation codes
+const int OP_ADD_LIQUIDITY = 1;
+const int OP_REMOVE_LIQUIDITY = 2;
+const int OP_BUY_SHARES = 3;
+const int OP_SELL_SHARES = 4;
+const int OP_SET_MODEL = 5;
+const int OP_UPDATE_FEE_RATE = 6;
+
+;; AMM Model types
+const int MODEL_LMSR = 0;
+const int MODEL_CONSTANT_PRODUCT = 1;
+
+;; Minimum liquidity amount (in nanoTON)
+const int MIN_LIQUIDITY = 1000000000; ;; 1 TON
+
+;; Precision for calculations (fixed point arithmetic)
+const int PRECISION = 1000000; ;; 6 decimal places
+
+;; ============================================
+;; Data Structures
+;; ============================================
+
+;; Pool data structure:
+;; model_type: LMSR or Constant Product
+;; liquidity: liquidity parameter (for LMSR) or total reserves (for CP)
+;; outcomes_dict: dictionary mapping outcome_id -> shares/reserves
+;; fee_rate: fee rate in basis points (e.g., 200 = 2%)
+;; fee_collector: address to collect fees
+;; admin_address: address of pool admin
+;; total_liquidity_tokens: total LP tokens issued
+
+(cell, int, int, int, int, int, int, int) load_pool_data() inline {
+    slice ds = get_data().begin_parse();
+    return (
+        ds~load_ref(),  ;; outcomes_dict
+        ds~load_uint(8),  ;; model_type
+        ds~load_coins(),  ;; liquidity (b for LMSR, total reserves for CP)
+        ds~load_coins(),  ;; total_liquidity_tokens
+        ds~load_uint(8),  ;; fee_rate (basis points)
+        ds~load_msg_addr(),  ;; fee_collector
+        ds~load_msg_addr(),  ;; admin_address
+        ds~load_uint(8)  ;; reserved
+    );
+}
+
+() save_pool_data(cell outcomes_dict, int model_type, int liquidity, int total_liquidity_tokens, int fee_rate, slice fee_collector, slice admin_address) impure {
+    cell c = begin_cell()
+        .store_ref(outcomes_dict)
+        .store_uint(model_type, 8)
+        .store_coins(liquidity)
+        .store_coins(total_liquidity_tokens)
+        .store_uint(fee_rate, 8)
+        .store_msg_addr(fee_collector)
+        .store_msg_addr(admin_address)
+        .store_uint(0, 8)  ;; reserved
+        .end_cell();
+    set_data(c);
+}
+
+;; ============================================
+;; Helper Functions
+;; ============================================
+
+;; Calculate fee amount
+int calculate_fee(int amount, int fee_rate) inline {
+    return (amount * fee_rate) / 10000;
+}
+
+;; Fixed point multiplication: a * b / PRECISION
+int fixed_mul(int a, int b) inline {
+    return (a * b) / PRECISION;
+}
+
+;; Fixed point division: a * PRECISION / b
+int fixed_div(int a, int b) inline {
+    if (b == 0) {
+        throw(100);
+    }
+    return (a * PRECISION) / b;
+}
+
+;; Simple exponential approximation: exp(x) ≈ 1 + x + x²/2 for small x
+;; For larger values, we use lookup table or iterative calculation
+int exp_approx(int x, int precision) inline {
+    ;; Simplified: exp(x/precision) ≈ 1 + x/precision for small x
+    ;; In production, use more accurate approximation
+    if (x < 0) {
+        return PRECISION - (x / 10);
+    }
+    return PRECISION + (x / 10);
+}
+
+;; Natural logarithm approximation: ln(x) ≈ (x-1) - (x-1)²/2 for x near 1
+int ln_approx(int x, int precision) inline {
+    ;; Simplified approximation
+    if (x <= 0) {
+        throw(101);
+    }
+    if (x == precision) {
+        return 0;
+    }
+    int diff = x - precision;
+    return diff - fixed_div(fixed_mul(diff, diff), 2 * precision);
+}
+
+;; ============================================
+;; LMSR Functions
+;; ============================================
+
+;; Calculate LMSR price for outcome
+;; Formula: p_i = exp(q_i / b) / Σ(exp(q_j / b))
+int lmsr_calculate_price(cell outcomes_dict, int outcome_id, int liquidity_b) inline {
+    ;; Simplified calculation for TON
+    ;; In production, use more accurate math or off-chain calculation
+    
+    ;; Get shares for this outcome
+    int? outcome_shares = outcomes_dict.udict_get?(8, outcome_id);
+    if (null?(outcome_shares)) {
+        return 0;
+    }
+    
+    ;; Simplified: price ≈ shares / (total_shares + liquidity_b)
+    ;; This is an approximation - full LMSR requires exp/ln which are expensive in FunC
+    int total_shares = 0;
+    ;; In production, iterate through all outcomes to calculate total
+    
+    return fixed_div(outcome_shares, outcome_shares + liquidity_b);
+}
+
+;; Calculate cost to buy shares using LMSR
+;; Formula: Cost(x) = b * ln(Σ(exp((q_j + δ_ij * x) / b))) - b * ln(Σ(exp(q_j / b)))
+int lmsr_calculate_buy_cost(cell outcomes_dict, int outcome_id, int shares_to_buy, int liquidity_b) inline {
+    ;; Simplified calculation
+    ;; In production, this should be calculated off-chain or use more complex math
+    
+    int? current_shares = outcomes_dict.udict_get?(8, outcome_id);
+    if (null?(current_shares)) {
+        current_shares = 0;
+    }
+    
+    ;; Simplified approximation: cost ≈ shares_to_buy * (1 + current_shares / liquidity_b)
+    int base_cost = shares_to_buy;
+    int adjustment = fixed_div(fixed_mul(shares_to_buy, current_shares), liquidity_b);
+    
+    return base_cost + adjustment;
+}
+
+;; ============================================
+;; Constant Product Functions
+;; ============================================
+
+;; Calculate Constant Product price for outcome
+;; Formula: p_i = R_i / Σ(R_j)
+int cp_calculate_price(cell outcomes_dict, int outcome_id) inline {
+    int? outcome_reserve = outcomes_dict.udict_get?(8, outcome_id);
+    if (null?(outcome_reserve)) {
+        return 0;
+    }
+    
+    ;; Calculate total reserves (simplified - in production iterate through all)
+    int total_reserves = outcome_reserve; ;; Simplified
+    
+    if (total_reserves == 0) {
+        return 0;
+    }
+    
+    return fixed_div(outcome_reserve, total_reserves);
+}
+
+;; Calculate cost to buy shares using Constant Product
+;; Maintain invariant: Π(R_i) = k
+int cp_calculate_buy_cost(cell outcomes_dict, int outcome_id, int shares_to_buy) inline {
+    ;; Simplified Constant Product calculation
+    ;; In production, properly maintain invariant across all outcomes
+    
+    int? current_reserve = outcomes_dict.udict_get?(8, outcome_id);
+    if (null?(current_reserve)) {
+        current_reserve = 0;
+    }
+    
+    ;; Simplified: cost ≈ shares_to_buy * (1 + shares_to_buy / current_reserve)
+    ;; Full CP requires maintaining product invariant
+    int base_cost = shares_to_buy;
+    if (current_reserve > 0) {
+        int slippage = fixed_div(fixed_mul(shares_to_buy, shares_to_buy), current_reserve);
+        return base_cost + slippage;
+    }
+    
+    return base_cost;
+}
+
+;; ============================================
+;; Main Contract Logic
+;; ============================================
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        return ();
+    }
+    
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    
+    if (flags & 1) { ;; ignore bounced messages
+        return ();
+    }
+    
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+    
+    ;; Load pool data
+    (cell outcomes_dict, int model_type, int liquidity, int total_liquidity_tokens, int fee_rate, slice fee_collector, slice admin_address, int reserved) = load_pool_data();
+    
+    if (op == OP_ADD_LIQUIDITY) {
+        ;; Add liquidity operation
+        ;; Message format: op (32) | query_id (64) | outcome_id (8) | amount (coins)
+        
+        int outcome_id = in_msg_body~load_uint(8);
+        int amount = in_msg_body~load_coins();
+        
+        ;; Check minimum amount
+        throw_if(200, amount < MIN_LIQUIDITY);
+        
+        ;; Calculate fee
+        int fee = calculate_fee(amount, fee_rate);
+        int net_amount = amount - fee;
+        
+        ;; Get current shares for this outcome
+        int? current_shares = outcomes_dict.udict_get?(8, outcome_id);
+        int new_shares = net_amount;
+        if (~ null?(current_shares)) {
+            new_shares = current_shares + net_amount;
+        }
+        
+        ;; Update outcomes dictionary
+        outcomes_dict = outcomes_dict.udict_set_ref(8, outcome_id, begin_cell().store_coins(new_shares).end_cell());
+        
+        ;; Update total liquidity
+        int new_liquidity = liquidity + net_amount;
+        
+        ;; Calculate LP tokens to mint (simplified: 1:1 for now)
+        int lp_tokens_to_mint = net_amount;
+        int new_total_lp_tokens = total_liquidity_tokens + lp_tokens_to_mint;
+        
+        ;; Send fee to fee collector
+        if (fee > 0) {
+            send_msg(
+                begin_cell()
+                    .store_uint(0, 1)
+                    .store_msg_addr(fee_collector)
+                    .store_coins(fee)
+                    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(null())
+                    .end_cell(),
+                1
+            );
+        }
+        
+        ;; Save updated pool data
+        save_pool_data(outcomes_dict, model_type, new_liquidity, new_total_lp_tokens, fee_rate, fee_collector, admin_address);
+        
+        ;; Send LP tokens to sender (simplified - in production use proper token contract)
+        slice sender = cs~load_msg_addr();
+        send_msg(
+            begin_cell()
+                .store_uint(0, 1)
+                .store_slice(sender)
+                .store_coins(lp_tokens_to_mint)
+                .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(null())
+                .end_cell(),
+            1
+        );
+        
+        return ();
+    }
+    
+    if (op == OP_BUY_SHARES) {
+        ;; Buy shares operation
+        ;; Message format: op (32) | query_id (64) | outcome_id (8) | shares_amount (coins)
+        
+        int outcome_id = in_msg_body~load_uint(8);
+        int shares_to_buy = in_msg_body~load_coins();
+        
+        ;; Check minimum amount
+        throw_if(300, msg_value < MIN_LIQUIDITY);
+        throw_if(301, shares_to_buy <= 0);
+        
+        ;; Calculate cost based on model
+        int cost = 0;
+        if (model_type == MODEL_LMSR) {
+            cost = lmsr_calculate_buy_cost(outcomes_dict, outcome_id, shares_to_buy, liquidity);
+        } else {
+            cost = cp_calculate_buy_cost(outcomes_dict, outcome_id, shares_to_buy);
+        }
+        
+        ;; Calculate fee
+        int fee = calculate_fee(cost, fee_rate);
+        int total_cost = cost + fee;
+        
+        ;; Check if user sent enough
+        throw_if(302, msg_value < total_cost);
+        
+        ;; Get current shares
+        int? current_shares = outcomes_dict.udict_get?(8, outcome_id);
+        int new_shares = shares_to_buy;
+        if (~ null?(current_shares)) {
+            new_shares = current_shares + shares_to_buy;
+        }
+        
+        ;; Update outcomes dictionary
+        outcomes_dict = outcomes_dict.udict_set_ref(8, outcome_id, begin_cell().store_coins(new_shares).end_cell());
+        
+        ;; Update liquidity
+        int new_liquidity = liquidity + cost;
+        
+        ;; Send fee to fee collector
+        if (fee > 0) {
+            send_msg(
+                begin_cell()
+                    .store_uint(0, 1)
+                    .store_msg_addr(fee_collector)
+                    .store_coins(fee)
+                    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(null())
+                    .end_cell(),
+                1
+            );
+        }
+        
+        ;; Save updated pool data
+        save_pool_data(outcomes_dict, model_type, new_liquidity, total_liquidity_tokens, fee_rate, fee_collector, admin_address);
+        
+        ;; Return excess funds
+        int excess = msg_value - total_cost;
+        if (excess > 0) {
+            slice sender = cs~load_msg_addr();
+            send_msg(
+                begin_cell()
+                    .store_uint(0, 1)
+                    .store_slice(sender)
+                    .store_coins(excess)
+                    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(null())
+                    .end_cell(),
+                1
+            );
+        }
+        
+        return ();
+    }
+    
+    if (op == OP_SELL_SHARES) {
+        ;; Sell shares operation
+        ;; Message format: op (32) | query_id (64) | outcome_id (8) | shares_amount (coins)
+        
+        int outcome_id = in_msg_body~load_uint(8);
+        int shares_to_sell = in_msg_body~load_coins();
+        
+        throw_if(400, shares_to_sell <= 0);
+        
+        ;; Get current shares
+        int? current_shares = outcomes_dict.udict_get?(8, outcome_id);
+        throw_if(401, null?(current_shares));
+        throw_if(402, current_shares < shares_to_sell);
+        
+        ;; Calculate revenue based on model
+        int revenue = 0;
+        if (model_type == MODEL_LMSR) {
+            ;; Simplified: revenue ≈ shares_to_sell * (1 - shares_to_sell / current_shares)
+            revenue = shares_to_sell - fixed_div(fixed_mul(shares_to_sell, shares_to_sell), current_shares);
+        } else {
+            ;; Constant Product: simplified calculation
+            revenue = shares_to_sell - fixed_div(fixed_mul(shares_to_sell, shares_to_sell), current_shares);
+        }
+        
+        ;; Calculate fee
+        int fee = calculate_fee(revenue, fee_rate);
+        int net_revenue = revenue - fee;
+        
+        ;; Update shares
+        int new_shares = current_shares - shares_to_sell;
+        outcomes_dict = outcomes_dict.udict_set_ref(8, outcome_id, begin_cell().store_coins(new_shares).end_cell());
+        
+        ;; Update liquidity
+        int new_liquidity = liquidity - revenue;
+        
+        ;; Send fee to fee collector
+        if (fee > 0) {
+            send_msg(
+                begin_cell()
+                    .store_uint(0, 1)
+                    .store_msg_addr(fee_collector)
+                    .store_coins(fee)
+                    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(null())
+                    .end_cell(),
+                1
+            );
+        }
+        
+        ;; Save updated pool data
+        save_pool_data(outcomes_dict, model_type, new_liquidity, total_liquidity_tokens, fee_rate, fee_collector, admin_address);
+        
+        ;; Send revenue to sender
+        slice sender = cs~load_msg_addr();
+        send_msg(
+            begin_cell()
+                .store_uint(0, 1)
+                .store_slice(sender)
+                .store_coins(net_revenue)
+                .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(null())
+                .end_cell(),
+            1
+        );
+        
+        return ();
+    }
+    
+    if (op == OP_SET_MODEL) {
+        ;; Set AMM model (admin only)
+        ;; Message format: op (32) | query_id (64) | model_type (8)
+        
+        slice sender = cs~load_msg_addr();
+        throw_if(500, ~ equal_slices(sender, admin_address));
+        
+        int new_model_type = in_msg_body~load_uint(8);
+        throw_if(501, new_model_type != MODEL_LMSR && new_model_type != MODEL_CONSTANT_PRODUCT);
+        
+        ;; Save updated pool data
+        save_pool_data(outcomes_dict, new_model_type, liquidity, total_liquidity_tokens, fee_rate, fee_collector, admin_address);
+        
+        return ();
+    }
+    
+    if (op == OP_UPDATE_FEE_RATE) {
+        ;; Update fee rate (admin only)
+        ;; Message format: op (32) | query_id (64) | new_fee_rate (8)
+        
+        slice sender = cs~load_msg_addr();
+        throw_if(600, ~ equal_slices(sender, admin_address));
+        
+        int new_fee_rate = in_msg_body~load_uint(8);
+        throw_if(601, new_fee_rate > 1000); ;; Max 10% (1000 basis points)
+        
+        ;; Save updated pool data
+        save_pool_data(outcomes_dict, model_type, liquidity, total_liquidity_tokens, new_fee_rate, fee_collector, admin_address);
+        
+        return ();
+    }
+    
+    ;; Unknown operation
+    throw(999);
+}
+
+() recv_external(int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; Handle external messages
+    recv_internal(0, msg_value, in_msg_full, in_msg_body);
+}
+
+;; ============================================
+;; Get Methods
+;; ============================================
+
+(int, int, int, int) get_pool_info() method_id {
+    (cell outcomes_dict, int model_type, int liquidity, int total_liquidity_tokens, int fee_rate, slice fee_collector, slice admin_address, int reserved) = load_pool_data();
+    return (model_type, liquidity, total_liquidity_tokens, fee_rate);
+}
+
+int get_outcome_shares(int outcome_id) method_id {
+    (cell outcomes_dict, int model_type, int liquidity, int total_liquidity_tokens, int fee_rate, slice fee_collector, slice admin_address, int reserved) = load_pool_data();
+    int? shares = outcomes_dict.udict_get?(8, outcome_id);
+    if (null?(shares)) {
+        return 0;
+    }
+    return shares;
+}
+
+int calculate_price(int outcome_id) method_id {
+    (cell outcomes_dict, int model_type, int liquidity, int total_liquidity_tokens, int fee_rate, slice fee_collector, slice admin_address, int reserved) = load_pool_data();
+    
+    if (model_type == MODEL_LMSR) {
+        return lmsr_calculate_price(outcomes_dict, outcome_id, liquidity);
+    } else {
+        return cp_calculate_price(outcomes_dict, outcome_id);
+    }
+}
+
+int calculate_buy_cost(int outcome_id, int shares) method_id {
+    (cell outcomes_dict, int model_type, int liquidity, int total_liquidity_tokens, int fee_rate, slice fee_collector, slice admin_address, int reserved) = load_pool_data();
+    
+    if (model_type == MODEL_LMSR) {
+        return lmsr_calculate_buy_cost(outcomes_dict, outcome_id, shares, liquidity);
+    } else {
+        return cp_calculate_buy_cost(outcomes_dict, outcome_id, shares);
+    }
+}
+

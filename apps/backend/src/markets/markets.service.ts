@@ -23,6 +23,7 @@ export class MarketsService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => PayoutsService))
     private payoutsService: PayoutsService,
+    private categoryValidator: CategoryValidator,
   ) {}
 
   /**
@@ -58,19 +59,11 @@ export class MarketsService {
       throw new ConflictException('Рынок с таким slug уже существует');
     }
 
-    // Валидация категории
+    // Валидация категории (используем общий валидатор)
     if (createMarketDto.categoryId) {
-      const category = await this.prisma.category.findUnique({
-        where: { id: createMarketDto.categoryId },
-      });
-
-      if (!category) {
-        throw new NotFoundException('Категория не найдена');
-      }
-
-      if (!category.isActive) {
-        throw new BadRequestException('Категория неактивна');
-      }
+      await this.categoryValidator.validateCategoryActiveExists(
+        createMarketDto.categoryId,
+      );
     }
 
     // Валидация outcomes

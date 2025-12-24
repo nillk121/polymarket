@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -26,6 +26,7 @@ export class BetsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  private readonly logger = new Logger(BetsGateway.name);
   private connectedUsers = new Map<string, Socket>();
 
   constructor(
@@ -58,9 +59,9 @@ export class BetsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Присоединяем к комнате пользователя
       client.join(`user:${payload.sub}`);
 
-      console.log(`User ${payload.sub} connected to bets gateway`);
+      this.logger.log(`User ${payload.sub} connected to bets gateway`);
     } catch (error) {
-      console.error('WebSocket authentication error:', error);
+      this.logger.error('WebSocket authentication error:', error);
       client.disconnect();
     }
   }
@@ -72,7 +73,7 @@ export class BetsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = client.data.userId;
     if (userId) {
       this.connectedUsers.delete(userId);
-      console.log(`User ${userId} disconnected from bets gateway`);
+      this.logger.log(`User ${userId} disconnected from bets gateway`);
     }
   }
 

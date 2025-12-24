@@ -21,6 +21,10 @@ import {
   BetType as PricingBetType,
   PricingModel,
 } from '@polymarket/pricing-engine';
+import { MarketFreezeService } from '../security/services/market-freeze.service';
+import { SuspiciousBettingService } from '../security/services/suspicious-betting.service';
+import { MarketValidator } from '../common/validators/market.validator';
+import { WalletValidator } from '../common/validators/wallet.validator';
 import Decimal from 'decimal.js';
 
 @Injectable()
@@ -32,6 +36,10 @@ export class BetsService {
     private balanceService: BalanceService,
     private transactionService: TransactionService,
     private betsGateway: BetsGateway,
+    private marketFreezeService: MarketFreezeService,
+    private suspiciousBettingService: SuspiciousBettingService,
+    private marketValidator: MarketValidator,
+    private walletValidator: WalletValidator,
   ) {}
 
   /**
@@ -57,54 +65,42 @@ export class BetsService {
 
     // Используем транзакцию для атомарности
     return this.prisma.$transaction(async (tx) => {
-      // 1. Получение и валидация рынка
-      const market = await tx.market.findUnique({
-        where: { id: placeBetDto.marketId },
-        include: {
-          outcomes: {
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
-      });
+      // 1. Валидация рынка (используем общий валидатор)
+      const market = await this.marketValidator.validateForBetting(
+        placeBetDto.marketId,
+      );
 
-      if (!market) {
-        throw new NotFoundException('Рынок не найден');
-      }
-
-      // 2. Проверка статуса рынка
-      if (market.status !== 'active' && market.status !== 'locked') {
+      // 2. Проверка заморозки рынка
+      const isFrozen = await this.marketFreezeService.isMarketFrozen(market.id);
+      if (isFrozen) {
         throw new BadRequestException(
-          `Невозможно разместить ставку на рынок со статусом ${market.status}`,
+          'Рынок временно заморожен. Ставки недоступны.',
         );
       }
 
-      // 3. Проверка дедлайна
-      if (market.endDate && new Date(market.endDate) < new Date()) {
-        throw new BadRequestException('Срок размещения ставок истек');
-      }
-
-      // 4. Проверка исхода
-      const outcome = market.outcomes.find(
-        (o) => o.id === placeBetDto.outcomeId,
+      // 3. Проверка исхода (используем общий валидатор)
+      const outcome = this.marketValidator.validateOutcomeInMarket(
+        market,
+        placeBetDto.outcomeId,
       );
-      if (!outcome) {
-        throw new NotFoundException('Исход не найден в этом рынке');
-      }
 
-      if (outcome.isResolved) {
-        throw new BadRequestException('Исход уже разрешен');
-      }
-
-      // 5. Проверка кошелька
+      // 4. Валидация кошелька (используем общий валидатор)
+      // Для транзакции используем прямой запрос, но валидацию через валидатор
       const wallet = await tx.wallet.findUnique({
         where: { id: placeBetDto.walletId },
+        include: {
+          balances: true,
+        },
       });
 
       if (!wallet) {
         throw new NotFoundException('Кошелек не найден');
       }
 
-      if (wallet.userId !== userId) {
+      this.walletValidator.validateWalletOwnership(wallet, userId);
+      this.walletValidator.validateWalletActive(wallet);
+
+      // Проверка баланса будет позже после расчета стоимости
         throw new ForbiddenException('Кошелек принадлежит другому пользователю');
       }
 
@@ -120,7 +116,7 @@ export class BetsService {
             ? PricingModel.LMSR
             : PricingModel.CONSTANT_PRODUCT,
         liquidity: new Decimal(market.liquidity.toString()),
-        feeRate: new Decimal(0.02), // TODO: получить из настроек рынка
+        feeRate: new Decimal(0.02), // Комиссия по умолчанию 2%, можно получить из настроек рынка или конфигурации
         outcomes: market.outcomes.map(
           (o): OutcomeState => ({
             id: o.id,
@@ -265,7 +261,12 @@ export class BetsService {
         },
       });
 
-      // 16. Списание средств
+      // 16. Анализ подозрительности ставки (асинхронно, не блокирует ответ)
+      this.suspiciousBettingService.analyzeBet(bet.id).catch((error) => {
+        this.logger.error(`Failed to analyze bet ${bet.id}:`, error.stack);
+      });
+
+      // 17. Списание средств
       await this.balanceService.deductBalance(
         placeBetDto.walletId,
         priceCalculation.totalCost,

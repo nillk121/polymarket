@@ -27,6 +27,8 @@ model User {
   bannedUntil   DateTime? @map("banned_until")
   banReason     String?  @map("ban_reason") @db.Text
   lastLoginAt   DateTime? @map("last_login_at")
+  riskScore     Decimal  @default(0) @map("risk_score") @db.Decimal(5, 2) // 0-100
+  suspiciousFlags Json?  @map("suspicious_flags") // Array of flags: rapid_betting, unusual_amounts, etc.
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -45,6 +47,19 @@ model User {
   referredReferrals UserReferral[] @relation("Referred")
   analyticsEvents AnalyticsEvent[]
   adminAuditLogs AdminAuditLog[]
+  marketResolutions MarketResolution[] @relation("MarketResolver")
+  finalizedResolutions MarketResolution[] @relation("MarketFinalizer")
+  createdDisputes MarketDispute[] @relation("DisputeCreator")
+  reviewedDisputes MarketDispute[] @relation("DisputeReviewer")
+  resolutionAuditLogs ResolutionAuditLog[] @relation("ResolutionAuditPerformer")
+  securityEvents SecurityEvent[]
+  resolvedSecurityEvents SecurityEvent[] @relation("SecurityEventResolver")
+  suspiciousActivities SuspiciousActivity[]
+  reviewedSuspiciousActivities SuspiciousActivity[] @relation("SuspiciousActivityReviewer")
+  multiAccountClusters MultiAccountCluster[] @relation("MultiAccountConfirmer")
+  multiAccountMembers MultiAccountMember[]
+  frozenMarkets MarketFreeze[] @relation("MarketFreezer")
+  unfrozenMarkets MarketFreeze[] @relation("MarketUnfreezer")
 
   @@index([telegramId])
   @@index([username])
@@ -217,6 +232,9 @@ model Market {
   bets              Bet[]
   posts             Post[]
   analyticsEvents   AnalyticsEvent[]
+  resolution        MarketResolution?
+  securityEvents    SecurityEvent[]
+  freezes           MarketFreeze[]
 
   @@index([slug])
   @@index([categoryId])
@@ -246,6 +264,8 @@ model Outcome {
   market      Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
   liquidityPools LiquidityPool[]
   bets        Bet[]
+  resolvedMarkets MarketResolution[] @relation("ResolvedOutcome")
+  disputedResolutions MarketDispute[]
 
   @@index([marketId])
   @@index([isResolved])
@@ -307,6 +327,7 @@ model Bet {
   payouts        Payout[]
   userReferrals  UserReferral[]
   analyticsEvents AnalyticsEvent[]
+  securityEvents SecurityEvent[]
 
   @@index([userId])
   @@index([marketId])
@@ -602,4 +623,249 @@ model AdminAuditLog {
   @@index([createdAt])
   @@index([adminId, action])
   @@map("admin_audit_logs")
+}
+
+// ============================================
+// MARKET RESOLUTION AUTHORITY
+// ============================================
+
+model MarketResolution {
+  id                String   @id @default(uuid())
+  marketId          String   @unique @map("market_id")
+  resolvedOutcomeId String   @map("resolved_outcome_id")
+  resolutionSource  String   @default("admin") @map("resolution_source") // admin, oracle
+  oracleId          String?  @map("oracle_id")
+  resolvedById      String?  @map("resolved_by_id") // admin user ID
+  status            String   @default("pending") // pending, confirmed, disputed, final
+  resolutionNotes   String?  @map("resolution_notes") @db.Text
+  resolutionDate    DateTime @default(now()) @map("resolution_date")
+  disputeWindowEnds DateTime? @map("dispute_window_ends")
+  finalizedAt       DateTime? @map("finalized_at")
+  finalizedById     String?  @map("finalized_by_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  market            Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  resolvedOutcome   Outcome  @relation("ResolvedOutcome", fields: [resolvedOutcomeId], references: [id])
+  oracle            Oracle?  @relation(fields: [oracleId], references: [id], onDelete: SetNull)
+  resolver          User?    @relation("MarketResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  finalizer         User?    @relation("MarketFinalizer", fields: [finalizedById], references: [id], onDelete: SetNull)
+  disputes          MarketDispute[]
+  auditLogs         ResolutionAuditLog[]
+
+  @@index([marketId])
+  @@index([status])
+  @@index([resolutionSource])
+  @@index([oracleId])
+  @@index([resolvedById])
+  @@index([disputeWindowEnds])
+  @@index([createdAt])
+  @@map("market_resolutions")
+}
+
+model MarketDispute {
+  id                String   @id @default(uuid())
+  resolutionId      String   @map("resolution_id")
+  disputedOutcomeId String   @map("disputed_outcome_id")
+  reason            String   @db.Text
+  evidence          Json?    // URLs, screenshots, etc.
+  status            String   @default("open") // open, reviewed, rejected, accepted
+  reviewedById      String?  @map("reviewed_by_id")
+  reviewedAt         DateTime? @map("reviewed_at")
+  reviewNotes       String?  @map("review_notes") @db.Text
+  createdById       String   @map("created_by_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  resolution        MarketResolution @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  disputedOutcome   Outcome          @relation(fields: [disputedOutcomeId], references: [id])
+  creator           User            @relation("DisputeCreator", fields: [createdById], references: [id])
+  reviewer          User?           @relation("DisputeReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([resolutionId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("market_disputes")
+}
+
+model Oracle {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?  @db.Text
+  type          String   // chainlink, band, custom, api
+  endpoint      String?  @db.Text
+  apiKey        String?  @map("api_key") @db.Text
+  isActive      Boolean  @default(true) @map("is_active")
+  isVerified    Boolean  @default(false) @map("is_verified")
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  resolutions   MarketResolution[]
+
+  @@index([name])
+  @@index([type])
+  @@index([isActive])
+  @@index([isVerified])
+  @@map("oracles")
+}
+
+model ResolutionAuditLog {
+  id              String   @id @default(uuid())
+  resolutionId    String   @map("resolution_id")
+  action          String   // created, updated, disputed, finalized, cancelled
+  performedById   String?  @map("performed_by_id")
+  oldValues       Json?
+  newValues       Json?
+  metadata        Json?
+  ipAddress       String?  @map("ip_address")
+  userAgent       String?  @map("user_agent") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  resolution      MarketResolution @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  performer       User?           @relation("ResolutionAuditPerformer", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([resolutionId])
+  @@index([action])
+  @@index([performedById])
+  @@index([createdAt])
+  @@map("resolution_audit_logs")
+}
+
+// ============================================
+// SECURITY & ABUSE PREVENTION
+// ============================================
+
+model SecurityEvent {
+  id              String   @id @default(uuid())
+  eventType       String   @map("event_type") // rate_limit_exceeded, suspicious_bet, multi_account, market_freeze, etc.
+  severity        String   @default("medium") // low, medium, high, critical
+  userId          String?  @map("user_id")
+  marketId        String?  @map("market_id")
+  betId           String?  @map("bet_id")
+  ipAddress       String?  @map("ip_address")
+  userAgent       String?  @map("user_agent") @db.Text
+  fingerprint     String?  // Browser/device fingerprint
+  metadata        Json?
+  isResolved      Boolean  @default(false) @map("is_resolved")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolvedById    String?  @map("resolved_by_id")
+  resolutionNotes String?  @map("resolution_notes") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  market          Market?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  bet             Bet?      @relation(fields: [betId], references: [id], onDelete: SetNull)
+  resolver        User?    @relation("SecurityEventResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([eventType])
+  @@index([severity])
+  @@index([userId])
+  @@index([marketId])
+  @@index([isResolved])
+  @@index([createdAt])
+  @@index([ipAddress])
+  @@index([fingerprint])
+  @@map("security_events")
+}
+
+model SuspiciousActivity {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  activityType    String   @map("activity_type") // betting_pattern, velocity, amount, timing
+  riskScore       Decimal  @map("risk_score") @db.Decimal(5, 2) // 0-100
+  description     String   @db.Text
+  metadata        Json?
+  isReviewed      Boolean  @default(false) @map("is_reviewed")
+  reviewedAt      DateTime? @map("reviewed_at")
+  reviewedById    String?  @map("reviewed_by_id")
+  reviewDecision  String?  @map("review_decision") // false_positive, confirmed, action_taken
+  reviewNotes     String?  @map("review_notes") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer        User?    @relation("SuspiciousActivityReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([activityType])
+  @@index([riskScore])
+  @@index([isReviewed])
+  @@index([createdAt])
+  @@map("suspicious_activities")
+}
+
+model MultiAccountCluster {
+  id              String   @id @default(uuid())
+  clusterId       String   @unique @map("cluster_id")
+  confidence      Decimal  @map("confidence") @db.Decimal(5, 2) // 0-100
+  evidence        Json?    // IP addresses, fingerprints, patterns
+  isConfirmed     Boolean  @default(false) @map("is_confirmed")
+  confirmedAt     DateTime? @map("confirmed_at")
+  confirmedById   String?  @map("confirmed_by_id")
+  actionTaken     String?  @map("action_taken") // none, warning, ban, freeze
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  accounts        MultiAccountMember[]
+  confirmer       User?    @relation("MultiAccountConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@index([clusterId])
+  @@index([confidence])
+  @@index([isConfirmed])
+  @@index([createdAt])
+  @@map("multi_account_clusters")
+}
+
+model MultiAccountMember {
+  id              String   @id @default(uuid())
+  clusterId       String   @map("cluster_id")
+  userId          String   @map("user_id")
+  evidence        Json?    // Specific evidence linking this user to cluster
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  cluster         MultiAccountCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clusterId, userId])
+  @@index([clusterId])
+  @@index([userId])
+  @@map("multi_account_members")
+}
+
+model MarketFreeze {
+  id              String   @id @default(uuid())
+  marketId        String   @unique @map("market_id")
+  reason          String   @db.Text
+  freezeType      String   @map("freeze_type") // emergency, suspicious, maintenance, manual
+  severity        String   @default("medium") // low, medium, high, critical
+  frozenById      String   @map("frozen_by_id")
+  isActive        Boolean  @default(true) @map("is_active")
+  unfrozenAt      DateTime? @map("unfrozen_at")
+  unfrozenById    String?  @map("unfrozen_by_id")
+  unfreezeReason  String?  @map("unfreeze_reason") @db.Text
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  market          Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  freezer         User     @relation("MarketFreezer", fields: [frozenById], references: [id])
+  unfreezer       User?    @relation("MarketUnfreezer", fields: [unfrozenById], references: [id], onDelete: SetNull)
+
+  @@index([marketId])
+  @@index([freezeType])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("market_freezes")
 }

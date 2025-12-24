@@ -1,0 +1,446 @@
+;; Payout Smart Contract for TON
+;; Handles payouts after market resolution
+;; Features: verify resolution, distribute winnings, prevent double payout
+
+#include "imports/stdlib.fc";
+
+;; ============================================
+;; Constants
+;; ============================================
+
+;; Operation codes
+const int OP_CLAIM_PAYOUT = 1;
+const int OP_BATCH_PAYOUT = 2;
+const int OP_VERIFY_RESOLUTION = 3;
+const int OP_SET_MARKET_ADDRESS = 4;
+const int OP_SET_POOL_ADDRESS = 5;
+const int OP_UPDATE_FEE_RATE = 6;
+
+;; Payout status
+const int PAYOUT_STATUS_PENDING = 0;
+const int PAYOUT_STATUS_PAID = 1;
+const int PAYOUT_STATUS_FAILED = 2;
+
+;; Minimum payout amount (in nanoTON)
+const int MIN_PAYOUT = 1000000; ;; 0.001 TON
+
+;; Precision for calculations
+const int PRECISION = 1000000; ;; 6 decimal places
+
+;; ============================================
+;; Data Structures
+;; ============================================
+
+;; Payout contract data:
+;; market_address: address of market contract
+;; pool_address: address of liquidity pool contract (optional)
+;; paid_bets_dict: dictionary of paid bets (bet_key -> timestamp)
+;; fee_rate: fee rate in basis points (e.g., 200 = 2%)
+;; fee_collector: address to collect fees
+;; admin_address: address of admin
+
+(slice, slice, cell, int, slice, slice) load_payout_data() inline {
+    slice ds = get_data().begin_parse();
+    return (
+        ds~load_msg_addr(),  ;; market_address
+        ds~load_msg_addr(),  ;; pool_address
+        ds~load_ref(),  ;; paid_bets_dict
+        ds~load_uint(8),  ;; fee_rate (basis points)
+        ds~load_msg_addr(),  ;; fee_collector
+        ds~load_msg_addr()   ;; admin_address
+    );
+}
+
+() save_payout_data(slice market_address, slice pool_address, cell paid_bets_dict, int fee_rate, slice fee_collector, slice admin_address) impure {
+    cell c = begin_cell()
+        .store_msg_addr(market_address)
+        .store_msg_addr(pool_address)
+        .store_ref(paid_bets_dict)
+        .store_uint(fee_rate, 8)
+        .store_msg_addr(fee_collector)
+        .store_msg_addr(admin_address)
+        .store_uint(0, 8)  ;; reserved
+        .end_cell();
+    set_data(c);
+}
+
+;; Bet key: hash(user_address, bet_id, market_address)
+;; Paid bets value: timestamp of payout
+
+;; ============================================
+;; Helper Functions
+;; ============================================
+
+;; Calculate fee amount
+int calculate_fee(int amount, int fee_rate) inline {
+    return (amount * fee_rate) / 10000;
+}
+
+;; Fixed point multiplication
+int fixed_mul(int a, int b) inline {
+    return (a * b) / PRECISION;
+}
+
+;; Fixed point division
+int fixed_div(int a, int b) inline {
+    if (b == 0) {
+        throw(100);
+    }
+    return (a * PRECISION) / b;
+}
+
+;; Create bet key: hash(user_address, bet_id, market_address)
+int create_bet_key(slice user_address, int bet_id, slice market_address) inline {
+    cell key_cell = begin_cell()
+        .store_slice(user_address)
+        .store_uint(bet_id, 64)
+        .store_slice(market_address)
+        .end_cell();
+    return key_cell.hash();
+}
+
+;; Check if bet was already paid
+int is_bet_paid(cell paid_bets_dict, int bet_key) inline {
+    int? paid_timestamp = paid_bets_dict.udict_get?(256, bet_key);
+    return (~ null?(paid_timestamp));
+}
+
+;; Mark bet as paid
+cell mark_bet_paid(cell paid_bets_dict, int bet_key) inline {
+    return paid_bets_dict.udict_set_ref(256, bet_key, begin_cell().store_uint(now(), 64).end_cell());
+}
+
+;; ============================================
+;; Resolution Verification
+;; ============================================
+
+;; Verify market resolution by querying market contract
+;; Returns: (is_resolved, winning_outcome, total_locked)
+(int, int, int) verify_resolution(slice market_address) inline {
+    ;; In FunC, we can't directly call other contracts' get methods
+    ;; This would need to be done off-chain or through message passing
+    ;; For now, we assume the resolution data is passed in the message
+    
+    ;; In production, this should:
+    ;; 1. Send a message to market contract to get resolution status
+    ;; 2. Wait for response
+    ;; 3. Verify the resolution
+    
+    ;; Simplified: return values should come from message or external call
+    return (0, 0, 0); ;; Placeholder - will be set by caller
+}
+
+;; ============================================
+;; Payout Calculation
+;; ============================================
+
+;; Calculate payout amount for winning bet
+;; Formula: payout = bet_amount * (1 + profit_ratio) - fee
+int calculate_payout(int bet_amount, int bet_outcome, int winning_outcome, int total_winning_shares, int total_losing_shares, int fee_rate) inline {
+    ;; Check if bet is for winning outcome
+    if (bet_outcome != winning_outcome) {
+        return 0; ;; No payout for losing bet
+    }
+    
+    ;; Simplified payout calculation
+    ;; In production, use AMM pricing from pool contract
+    ;; For now: payout = bet_amount * 2 (1:1 odds) - fee
+    
+    int gross_payout = bet_amount * 2; ;; Simplified 1:1 payout
+    int fee = calculate_fee(gross_payout, fee_rate);
+    int net_payout = gross_payout - fee;
+    
+    return net_payout;
+}
+
+;; ============================================
+;; Main Contract Logic
+;; ============================================
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        return ();
+    }
+    
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    
+    if (flags & 1) { ;; ignore bounced messages
+        return ();
+    }
+    
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+    
+    ;; Load payout data
+    (slice market_address, slice pool_address, cell paid_bets_dict, int fee_rate, slice fee_collector, slice admin_address) = load_payout_data();
+    
+    if (op == OP_CLAIM_PAYOUT) {
+        ;; Claim payout for a bet
+        ;; Message format: op (32) | query_id (64) | bet_id (64) | bet_outcome (8) | bet_amount (coins) | winning_outcome (8) | total_winning (coins) | total_losing (coins)
+        
+        int bet_id = in_msg_body~load_uint(64);
+        int bet_outcome = in_msg_body~load_uint(8);
+        int bet_amount = in_msg_body~load_coins();
+        int winning_outcome = in_msg_body~load_uint(8);
+        int total_winning = in_msg_body~load_coins();
+        int total_losing = in_msg_body~load_coins();
+        
+        slice sender = cs~load_msg_addr();
+        
+        ;; Create bet key
+        int bet_key = create_bet_key(sender, bet_id, market_address);
+        
+        ;; Check if bet was already paid
+        throw_if(200, is_bet_paid(paid_bets_dict, bet_key));
+        
+        ;; Verify resolution (in production, query market contract)
+        ;; For now, we trust the passed data, but in production should verify
+        throw_if(201, winning_outcome == 0); ;; Market not resolved
+        
+        ;; Check if bet is for winning outcome
+        throw_if(202, bet_outcome != winning_outcome);
+        
+        ;; Calculate payout
+        int payout = calculate_payout(bet_amount, bet_outcome, winning_outcome, total_winning, total_losing, fee_rate);
+        
+        ;; Check minimum payout
+        throw_if(203, payout < MIN_PAYOUT);
+        
+        ;; Check if contract has enough balance
+        throw_if(204, my_balance < payout + 10000000); ;; Leave some for fees
+        
+        ;; Mark bet as paid
+        paid_bets_dict = mark_bet_paid(paid_bets_dict, bet_key);
+        
+        ;; Calculate fee
+        int gross_payout = bet_amount * 2; ;; Simplified
+        int fee = calculate_fee(gross_payout, fee_rate);
+        
+        ;; Send fee to fee collector
+        if (fee > 0) {
+            send_msg(
+                begin_cell()
+                    .store_uint(0, 1)
+                    .store_msg_addr(fee_collector)
+                    .store_coins(fee)
+                    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(null())
+                    .end_cell(),
+                1
+            );
+        }
+        
+        ;; Save updated payout data
+        save_payout_data(market_address, pool_address, paid_bets_dict, fee_rate, fee_collector, admin_address);
+        
+        ;; Send payout to user
+        send_msg(
+            begin_cell()
+                .store_uint(0, 1)
+                .store_slice(sender)
+                .store_coins(payout)
+                .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(null())
+                .end_cell(),
+            1
+        );
+        
+        return ();
+    }
+    
+    if (op == OP_BATCH_PAYOUT) {
+        ;; Batch payout for multiple bets (admin only)
+        ;; Message format: op (32) | query_id (64) | num_bets (8) | [bet_id (64) | user_address (address) | bet_outcome (8) | bet_amount (coins)] * num_bets | winning_outcome (8) | total_winning (coins) | total_losing (coins)
+        
+        slice sender = cs~load_msg_addr();
+        throw_if(300, ~ equal_slices(sender, admin_address));
+        
+        int num_bets = in_msg_body~load_uint(8);
+        throw_if(301, num_bets == 0 || num_bets > 100); ;; Max 100 bets per batch
+        
+        int winning_outcome = in_msg_body~load_uint(8);
+        int total_winning = in_msg_body~load_coins();
+        int total_losing = in_msg_body~load_coins();
+        
+        throw_if(302, winning_outcome == 0);
+        
+        int total_payout = 0;
+        int total_fee = 0;
+        
+        ;; Process each bet
+        int i = 0;
+        while (i < num_bets) {
+            int bet_id = in_msg_body~load_uint(64);
+            slice user_address = in_msg_body~load_msg_addr();
+            int bet_outcome = in_msg_body~load_uint(8);
+            int bet_amount = in_msg_body~load_coins();
+            
+            ;; Create bet key
+            int bet_key = create_bet_key(user_address, bet_id, market_address);
+            
+            ;; Check if already paid
+            if (~ is_bet_paid(paid_bets_dict, bet_key)) {
+                ;; Check if winning bet
+                if (bet_outcome == winning_outcome) {
+                    ;; Calculate payout
+                    int payout = calculate_payout(bet_amount, bet_outcome, winning_outcome, total_winning, total_losing, fee_rate);
+                    
+                    if (payout >= MIN_PAYOUT) {
+                        total_payout = total_payout + payout;
+                        
+                        int gross_payout = bet_amount * 2;
+                        int fee = calculate_fee(gross_payout, fee_rate);
+                        total_fee = total_fee + fee;
+                        
+                        ;; Mark as paid
+                        paid_bets_dict = mark_bet_paid(paid_bets_dict, bet_key);
+                        
+                        ;; Send payout
+                        send_msg(
+                            begin_cell()
+                                .store_uint(0, 1)
+                                .store_slice(user_address)
+                                .store_coins(payout)
+                                .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                                .store_ref(null())
+                                .end_cell(),
+                            1
+                        );
+                    }
+                }
+            }
+            
+            i = i + 1;
+        }
+        
+        ;; Send total fee to fee collector
+        if (total_fee > 0) {
+            send_msg(
+                begin_cell()
+                    .store_uint(0, 1)
+                    .store_msg_addr(fee_collector)
+                    .store_coins(total_fee)
+                    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(null())
+                    .end_cell(),
+                1
+            );
+        }
+        
+        ;; Save updated payout data
+        save_payout_data(market_address, pool_address, paid_bets_dict, fee_rate, fee_collector, admin_address);
+        
+        return ();
+    }
+    
+    if (op == OP_VERIFY_RESOLUTION) {
+        ;; Verify market resolution (can be called by anyone)
+        ;; Message format: op (32) | query_id (64) | market_address (address)
+        
+        slice market_to_check = in_msg_body~load_msg_addr();
+        
+        ;; In production, this would query the market contract
+        ;; For now, return success (in production, implement actual verification)
+        
+        ;; Send response back
+        slice sender = cs~load_msg_addr();
+        send_msg(
+            begin_cell()
+                .store_uint(0, 1)
+                .store_slice(sender)
+                .store_coins(0)
+                .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(
+                    begin_cell()
+                        .store_uint(query_id, 64)
+                        .store_uint(1, 8) ;; is_resolved
+                        .store_uint(0, 8) ;; winning_outcome (placeholder)
+                        .end_cell()
+                )
+                .end_cell(),
+            1
+        );
+        
+        return ();
+    }
+    
+    if (op == OP_SET_MARKET_ADDRESS) {
+        ;; Set market contract address (admin only)
+        ;; Message format: op (32) | query_id (64) | new_market_address (address)
+        
+        slice sender = cs~load_msg_addr();
+        throw_if(400, ~ equal_slices(sender, admin_address));
+        
+        slice new_market_address = in_msg_body~load_msg_addr();
+        
+        ;; Save updated payout data
+        save_payout_data(new_market_address, pool_address, paid_bets_dict, fee_rate, fee_collector, admin_address);
+        
+        return ();
+    }
+    
+    if (op == OP_SET_POOL_ADDRESS) {
+        ;; Set pool contract address (admin only)
+        ;; Message format: op (32) | query_id (64) | new_pool_address (address)
+        
+        slice sender = cs~load_msg_addr();
+        throw_if(500, ~ equal_slices(sender, admin_address));
+        
+        slice new_pool_address = in_msg_body~load_msg_addr();
+        
+        ;; Save updated payout data
+        save_payout_data(market_address, new_pool_address, paid_bets_dict, fee_rate, fee_collector, admin_address);
+        
+        return ();
+    }
+    
+    if (op == OP_UPDATE_FEE_RATE) {
+        ;; Update fee rate (admin only)
+        ;; Message format: op (32) | query_id (64) | new_fee_rate (8)
+        
+        slice sender = cs~load_msg_addr();
+        throw_if(600, ~ equal_slices(sender, admin_address));
+        
+        int new_fee_rate = in_msg_body~load_uint(8);
+        throw_if(601, new_fee_rate > 1000); ;; Max 10% (1000 basis points)
+        
+        ;; Save updated payout data
+        save_payout_data(market_address, pool_address, paid_bets_dict, new_fee_rate, fee_collector, admin_address);
+        
+        return ();
+    }
+    
+    ;; Unknown operation
+    throw(999);
+}
+
+() recv_external(int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    ;; Handle external messages
+    recv_internal(0, msg_value, in_msg_full, in_msg_body);
+}
+
+;; ============================================
+;; Get Methods
+;; ============================================
+
+(slice, slice, int, int) get_payout_info() method_id {
+    (slice market_address, slice pool_address, cell paid_bets_dict, int fee_rate, slice fee_collector, slice admin_address) = load_payout_data();
+    return (market_address, pool_address, fee_rate, 0);
+}
+
+int is_bet_claimed(int bet_key) method_id {
+    (slice market_address, slice pool_address, cell paid_bets_dict, int fee_rate, slice fee_collector, slice admin_address) = load_payout_data();
+    if (is_bet_paid(paid_bets_dict, bet_key)) {
+        return 1;
+    }
+    return 0;
+}
+
+int get_paid_bets_count() method_id {
+    (slice market_address, slice pool_address, cell paid_bets_dict, int fee_rate, slice fee_collector, slice admin_address) = load_payout_data();
+    ;; In production, iterate through dictionary to count
+    ;; For now, return 0 (placeholder)
+    return 0;
+}
+

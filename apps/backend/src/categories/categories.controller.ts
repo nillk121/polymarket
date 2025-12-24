@@ -19,6 +19,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { CacheInterceptor } from '@nestjs/cache-manager';
+import { UseInterceptors } from '@nestjs/common';
 
 @Controller('categories')
 export class CategoriesController {
@@ -40,7 +42,9 @@ export class CategoriesController {
    */
   @Get()
   @Public()
+  @UseInterceptors(CacheInterceptor)
   findAll(@Query() query: QueryCategoryDto) {
+    // Кэширование реализовано на уровне сервиса
     return this.categoriesService.findAll(query);
   }
 

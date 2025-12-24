@@ -19,6 +19,12 @@ import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
+import { ChannelsModule } from './channels/channels.module';
+import { PostTemplatesModule } from './post-templates/post-templates.module';
+import { PostsModule } from './posts/posts.module';
+import { MarketResolutionModule } from './market-resolution/market-resolution.module';
+import { SecurityModule } from './security/security.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -71,6 +77,12 @@ import { AdminModule } from './admin/admin.module';
     PayoutsModule,
     AnalyticsModule,
     AdminModule,
+    ChannelsModule,
+    PostTemplatesModule,
+    PostsModule,
+    MarketResolutionModule,
+    SecurityModule,
+    CommonModule,
   ],
   controllers: [AppController],
   providers: [

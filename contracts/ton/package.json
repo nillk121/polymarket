@@ -1,0 +1,24 @@
+{
+  "name": "@polymarket/ton-contracts",
+  "version": "1.0.0",
+  "description": "TON smart contracts for prediction markets",
+  "scripts": {
+    "compile": "func -SPA stdlib.fc market-v2.fc -o market-v2.fif",
+    "compile:basic": "func -SPA stdlib.fc market.fc -o market.fif",
+    "compile:pool": "func -SPA stdlib.fc liquidity-pool.fc -o liquidity-pool.fif",
+    "compile:payout": "func -SPA stdlib.fc payout.fc -o payout.fif",
+    "compile:integration": "func -SPA stdlib.fc market-pool-integration.fc -o market-pool-integration.fif",
+    "compile:all": "npm run compile && npm run compile:pool && npm run compile:payout && npm run compile:integration",
+    "deploy": "fift -s deploy.fif",
+    "test": "echo 'Tests require TON test environment'"
+  },
+  "keywords": [
+    "ton",
+    "func",
+    "smart-contract",
+    "prediction-market"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+

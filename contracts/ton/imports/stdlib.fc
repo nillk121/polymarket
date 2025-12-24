@@ -1,0 +1,6 @@
+;; Standard library imports for TON FunC
+;; This file should be provided by TON SDK
+
+;; For now, this is a placeholder
+;; In production, use the official TON stdlib.fc
+

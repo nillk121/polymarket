@@ -6,6 +6,8 @@ import { TransactionService } from './services/transaction.service';
 import { BetsGateway } from './gateways/bets.gateway';
 import { MarketsModule } from '../markets/markets.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { SecurityModule } from '../security/security.module';
+import { CommonModule } from '../common/common.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
 
@@ -13,6 +15,8 @@ import { ConfigModule } from '@nestjs/config';
   imports: [
     PrismaModule,
     MarketsModule,
+    SecurityModule,
+    CommonModule,
     JwtModule,
     ConfigModule,
   ],

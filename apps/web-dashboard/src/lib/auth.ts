@@ -19,44 +19,47 @@ export interface AuthResponse {
 
 export interface User {
   id: string;
-  username: string;
+  telegramId?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
   email?: string;
+  phone?: string;
+  avatarUrl?: string;
+  isActive: boolean;
+  isVerified: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
   roles: Array<{ name: string }>;
 }
 
 export const authApi = {
   /**
    * Вход в систему (для админов)
-   * 
-   * ВАЖНО: В текущей версии backend нет отдельного админ-логина.
-   * Для админ-панели нужно либо:
-   * 1. Добавить эндпоинт POST /auth/admin/login в backend
-   * 2. Использовать Telegram auth (неудобно для веб-панели)
-   * 
-   * Временная реализация - требует добавления админ-логина в backend
    */
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    // TODO: Добавить админ-логин в backend
-    // Временная заглушка - в продакшене нужна отдельная админ-авторизация
     try {
-      // Попытка использовать существующий эндпоинт (если он будет добавлен)
       const response = await api.post('/auth/admin/login', credentials);
       const data = response.data;
       
       // Сохраняем токены в cookies
-      Cookies.set('accessToken', data.accessToken || data.access_token, { expires: 7 });
-      Cookies.set('refreshToken', data.refreshToken || data.refresh_token, { expires: 30 });
+      const accessToken = data.accessToken || data.access_token;
+      const refreshToken = data.refreshToken || data.refresh_token;
+      
+      if (accessToken) {
+        Cookies.set('accessToken', accessToken, { expires: 7 });
+      }
+      if (refreshToken) {
+        Cookies.set('refreshToken', refreshToken, { expires: 30 });
+      }
       
       return {
-        accessToken: data.accessToken || data.access_token,
-        refreshToken: data.refreshToken || data.refresh_token,
+        accessToken: accessToken,
+        refreshToken: refreshToken,
         user: data.user,
       };
     } catch (error: any) {
-      // Если эндпоинт не существует, выбрасываем понятную ошибку
-      if (error.response?.status === 404) {
-        throw new Error('Админ-логин не настроен. Обратитесь к разработчику.');
-      }
+      console.error('Login error:', error.response?.data || error.message);
       throw error;
     }
   },

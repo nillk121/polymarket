@@ -9,9 +9,10 @@ import { TelegramStarsProvider } from './providers/telegram-stars.provider';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { BalanceService } from '../bets/services/balance.service';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule],
+  imports: [PrismaModule, ConfigModule, UsersModule],
   controllers: [PaymentsController],
   providers: [
     PaymentsService,

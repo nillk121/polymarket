@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BetsService } from './bets.service';
 import { BetsController } from './bets.controller';
 import { BalanceService } from './services/balance.service';
@@ -14,7 +14,7 @@ import { ConfigModule } from '@nestjs/config';
 @Module({
   imports: [
     PrismaModule,
-    MarketsModule,
+    forwardRef(() => MarketsModule),
     SecurityModule,
     CommonModule,
     JwtModule,

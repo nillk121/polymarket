@@ -296,8 +296,9 @@ export class AnalyticsService {
       marketId: market.marketId,
       title: market.title,
       totalLiquidity: market.totalLiquidity.toNumber(),
-      outcomes: Array.from(market.outcomes.values()).map((outcome) => ({
-        ...outcome,
+      outcomes: Array.from(market.outcomes.values()).map((outcome: any) => ({
+        outcomeId: outcome.outcomeId,
+        title: outcome.title,
         liquidity: outcome.liquidity.toNumber(),
         percentage:
           market.totalLiquidity.gt(0)

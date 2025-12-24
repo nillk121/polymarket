@@ -7,7 +7,7 @@ import { betsApi, PlaceBetDto } from '../api/bets';
 import { walletApi } from '../api/wallet';
 import { useAuthStore } from '../store/authStore';
 import Decimal from 'decimal.js';
-import WebApp from '@twa-dev/sdk';
+import { safeWebAppShowAlert } from '../utils/webapp';
 
 export default function PlaceBet() {
   const { t } = useTranslation();
@@ -51,17 +51,17 @@ export default function PlaceBet() {
       queryClient.invalidateQueries({ queryKey: ['markets'] });
       queryClient.invalidateQueries({ queryKey: ['bets'] });
       queryClient.invalidateQueries({ queryKey: ['balance'] });
-      WebApp.showAlert(t('bet.betPlaced'));
+      safeWebAppShowAlert(t('bet.betPlaced'));
       navigate(`/markets/${id}`);
     },
     onError: (error: any) => {
-      WebApp.showAlert(error.response?.data?.message || t('bet.betFailed'));
+      safeWebAppShowAlert(error.response?.data?.message || t('bet.betFailed'));
     },
   });
 
   const handlePlaceBet = () => {
     if (!selectedOutcomeId || !amount || !internalWallet) {
-      WebApp.showAlert(t('bet.fillAllFields'));
+      safeWebAppShowAlert(t('bet.fillAllFields'));
       return;
     }
 

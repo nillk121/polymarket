@@ -15,7 +15,6 @@ import { ResolveMarketDto } from './dto/resolve-market.dto';
 import { QueryMarketDto } from './dto/query-market.dto';
 import { PayoutsService } from '../payouts/payouts.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { CategoryValidator } from '../common/validators/category.validator';
 
@@ -216,6 +215,7 @@ export class MarketsService {
 
     // Кэшируем результат на 60 секунд для активных рынков
     if (!query.status || query.status === 'active') {
+      const cacheKey = `markets:list:${page}:${limit}:${status || 'all'}:${categoryId || 'all'}`;
       await this.cacheManager.set(cacheKey, result, 60 * 1000);
     }
 
@@ -310,9 +310,9 @@ export class MarketsService {
     }
 
     // Проверка уникальности slug
-    if (updateMarketDto.slug && updateMarketDto.slug !== market.slug) {
+    if ((updateMarketDto as any).slug && (updateMarketDto as any).slug !== market.slug) {
       const existing = await this.prisma.market.findUnique({
-        where: { slug: updateMarketDto.slug },
+        where: { slug: (updateMarketDto as any).slug },
       });
 
       if (existing) {
@@ -321,9 +321,9 @@ export class MarketsService {
     }
 
     // Валидация категории
-    if (updateMarketDto.categoryId) {
+    if ((updateMarketDto as any).categoryId) {
       const category = await this.prisma.category.findUnique({
-        where: { id: updateMarketDto.categoryId },
+        where: { id: (updateMarketDto as any).categoryId },
       });
 
       if (!category) {

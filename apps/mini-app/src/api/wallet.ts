@@ -52,5 +52,18 @@ export const walletApi = {
     const response = await api.get('/payments/transactions', { params });
     return response.data;
   },
+
+  /**
+   * Создать платеж и получить invoice URL для WebApp
+   */
+  createPaymentInvoice: async (data: {
+    provider: string;
+    amount: number;
+    currency: string;
+    description?: string;
+  }): Promise<{ invoiceUrl: string; paymentId: string }> => {
+    const response = await api.post('/payments/invoice', data);
+    return response.data;
+  },
 };
 

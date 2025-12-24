@@ -78,7 +78,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Дашборд</h1>
         <p className="mt-2 text-gray-600">
-          Добро пожаловать, {user?.username || 'Администратор'}
+          Добро пожаловать, {user?.username || user?.firstName || 'Администратор'}!
         </p>
       </div>
 

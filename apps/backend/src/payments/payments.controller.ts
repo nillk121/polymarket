@@ -11,13 +11,18 @@ import {
   Headers,
   RawBodyRequest,
   Req,
+  NotFoundException,
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { PaymentGatewayService } from './services/payment-gateway.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentTelegramDto } from './dto/create-payment-telegram.dto';
+import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { PaymentProviderType } from './interfaces/payment-provider.interface';
+import { UsersService } from '../users/users.service';
 import Decimal from 'decimal.js';
 
 @Controller('payments')
@@ -25,10 +30,11 @@ export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     private readonly paymentGatewayService: PaymentGatewayService,
+    private readonly usersService: UsersService,
   ) {}
 
   /**
-   * Создание платежа
+   * Создание платежа (для авторизованных пользователей)
    * POST /payments
    */
   @Post()
@@ -44,6 +50,42 @@ export class PaymentsController {
       new Decimal(createPaymentDto.amount),
       createPaymentDto.currency,
       createPaymentDto.walletId,
+      createPaymentDto.description,
+      createPaymentDto.idempotencyKey,
+      createPaymentDto.metadata,
+    );
+  }
+
+  /**
+   * Создание платежа через Telegram Bot (публичный endpoint)
+   * POST /payments/telegram
+   */
+  @Post('telegram')
+  @Public()
+  @HttpCode(HttpStatus.CREATED)
+  async createPaymentFromTelegram(
+    @Body() createPaymentDto: CreatePaymentTelegramDto,
+  ) {
+    // Находим пользователя по Telegram ID
+    const user = await this.usersService.findByTelegramId(createPaymentDto.telegramId);
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    // Получаем кошельки пользователя
+    const wallets = await this.usersService.getUserWallets(createPaymentDto.telegramId);
+    const internalWallet = wallets.find((w: any) => (w.type === 'internal' || w.type === 'ton') && (w.isActive !== false));
+    
+    if (!internalWallet) {
+      throw new NotFoundException('Активный кошелек не найден');
+    }
+
+    return this.paymentGatewayService.createPayment(
+      user.id,
+      createPaymentDto.provider,
+      new Decimal(createPaymentDto.amount),
+      createPaymentDto.currency,
+      internalWallet.id,
       createPaymentDto.description,
       createPaymentDto.idempotencyKey,
       createPaymentDto.metadata,
@@ -129,5 +171,52 @@ export class PaymentsController {
       parseInt(page),
       parseInt(limit),
     );
+  }
+
+  /**
+   * Создание invoice для Mini App (WebApp.openInvoice)
+   * POST /payments/invoice
+   */
+  @Post('invoice')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  async createInvoice(
+    @Body() createInvoiceDto: CreateInvoiceDto,
+    @CurrentUser() user: any,
+  ) {
+    // Получаем кошельки пользователя
+    const wallets = await this.usersService.getWalletsByUserId(user.id);
+    const internalWallet = wallets.find((w: any) => (w.type === 'internal' || w.type === 'ton') && (w.isActive !== false));
+    
+    if (!internalWallet) {
+      throw new NotFoundException('Активный кошелек не найден');
+    }
+
+    // Создаем платеж
+    const paymentResult = await this.paymentGatewayService.createPayment(
+      user.id,
+      createInvoiceDto.provider,
+      new Decimal(createInvoiceDto.amount),
+      createInvoiceDto.currency,
+      internalWallet.id,
+      createInvoiceDto.description,
+      createInvoiceDto.idempotencyKey,
+      createInvoiceDto.metadata,
+    );
+
+    // Генерируем invoice URL через Bot API
+    const invoiceUrl = await this.paymentsService.createInvoiceUrl(
+      paymentResult,
+      createInvoiceDto.provider,
+      createInvoiceDto.amount,
+      createInvoiceDto.currency,
+      createInvoiceDto.description,
+    );
+
+    return {
+      invoiceUrl,
+      paymentId: paymentResult.paymentId,
+      transactionId: paymentResult.transactionId,
+    };
   }
 }

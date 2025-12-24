@@ -11,7 +11,7 @@ import { PaymentsModule } from '../payments/payments.module';
 @Module({
   imports: [
     PrismaModule,
-    BetsModule,
+    forwardRef(() => BetsModule),
     forwardRef(() => PaymentsModule),
   ],
   controllers: [PayoutsController],

@@ -150,7 +150,6 @@ export class PostsService {
             lastName: true,
           },
         },
-        trafficSources: true,
       },
     });
 

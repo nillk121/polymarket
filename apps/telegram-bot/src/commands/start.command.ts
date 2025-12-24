@@ -26,8 +26,13 @@ export async function handleStart(ctx: Context) {
       }
     }
 
-    // Проверка существования пользователя
-    let user = await apiClient.getUser(telegramId);
+    // Проверка существования пользователя (опционально, не блокируем если API недоступен)
+    let user = null;
+    try {
+      user = await apiClient.getUser(telegramId);
+    } catch (error) {
+      console.warn('API недоступен, продолжаем без проверки пользователя:', error);
+    }
 
     if (!user && referralCode) {
       // Регистрация с реферальным кодом

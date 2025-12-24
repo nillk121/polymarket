@@ -50,7 +50,8 @@ export class AnalyticsSDK {
         return null;
       }
 
-      return await response.json();
+      const data = await response.json();
+      return data as AnalyticsEvent;
     } catch (error) {
       console.error('Error tracking event:', error);
       return null;

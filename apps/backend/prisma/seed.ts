@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -274,6 +275,40 @@ async function main() {
   ]);
 
   console.log('✅ Категории созданы');
+
+  // Создание админ пользователя
+  const adminRoleForUser = roles.find((r) => r.name === 'admin');
+  if (adminRoleForUser) {
+    const adminPassword = 'admin123'; // Пароль по умолчанию - ОБЯЗАТЕЛЬНО ИЗМЕНИТЕ В PRODUCTION!
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
+
+    const adminUser = await prisma.user.upsert({
+      where: { telegramId: 'admin' }, // Используем специальный telegramId для админа
+      update: {
+        passwordHash, // Обновляем пароль при каждом seed
+      },
+      create: {
+        telegramId: 'admin',
+        username: 'admin',
+        firstName: 'Администратор',
+        email: 'admin@polymarket.local',
+        passwordHash,
+        isActive: true,
+        isVerified: true,
+        roles: {
+          create: {
+            roleId: adminRoleForUser.id,
+          },
+        },
+      },
+    });
+
+    console.log('✅ Админ пользователь создан');
+    console.log('   Логин: admin');
+    console.log('   Пароль: admin123');
+    console.log('   ⚠️  ВАЖНО: Измените пароль в production!');
+  }
+
   console.log('🎉 Заполнение базы данных завершено!');
 }
 

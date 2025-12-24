@@ -19,7 +19,7 @@ import Decimal from 'decimal.js';
  */
 @Injectable()
 export class PaymentGatewayService {
-  private providers: Map<PaymentProviderType, IPaymentProvider>;
+  private providers: Map<PaymentProviderType, IPaymentProvider> = new Map();
 
   constructor(
     private prisma: PrismaService,
@@ -31,11 +31,9 @@ export class PaymentGatewayService {
     private balanceService: BalanceService,
   ) {
     // Регистрация провайдеров
-    this.providers = new Map([
-      [PaymentProviderType.TON_WALLET, this.tonWalletProvider],
-      [PaymentProviderType.TELEGRAM_WALLET, this.telegramWalletProvider],
-      [PaymentProviderType.TELEGRAM_STARS, this.telegramStarsProvider],
-    ]);
+    this.providers.set(PaymentProviderType.TON_WALLET, this.tonWalletProvider);
+    this.providers.set(PaymentProviderType.TELEGRAM_WALLET, this.telegramWalletProvider);
+    this.providers.set(PaymentProviderType.TELEGRAM_STARS, this.telegramStarsProvider);
   }
 
   /**
@@ -70,7 +68,16 @@ export class PaymentGatewayService {
       throw new BadRequestException('Wallet belongs to another user');
     }
 
-    if (wallet.type !== providerType) {
+    // Для Telegram Stars, Telegram Wallet и TON Wallet разрешаем использование internal кошелька
+    // Все платежи зачисляются на внутренний баланс пользователя
+    const allowedWalletTypes = ['internal', 'ton'];
+    const isInternalWalletAllowed = 
+      allowedWalletTypes.includes(wallet.type) &&
+      (providerType === PaymentProviderType.TELEGRAM_STARS ||
+       providerType === PaymentProviderType.TELEGRAM_WALLET ||
+       providerType === PaymentProviderType.TON_WALLET);
+
+    if (!isInternalWalletAllowed && wallet.type !== providerType) {
       throw new BadRequestException(
         `Wallet type ${wallet.type} does not match provider ${providerType}`,
       );
@@ -98,6 +105,20 @@ export class PaymentGatewayService {
       return existing;
     }
 
+    // Для TON Wallet нужен адрес кошелька
+    // Если у кошелька нет адреса (internal кошелек), используем системный адрес из конфигурации
+    let walletAddress = wallet.address;
+    if (!walletAddress && providerType === PaymentProviderType.TON_WALLET) {
+      // Используем системный адрес из конфигурации или генерируем временный
+      // В production здесь должен быть реальный адрес кошелька платформы
+      walletAddress = process.env.TON_SYSTEM_WALLET_ADDRESS || '';
+      if (!walletAddress) {
+        throw new BadRequestException(
+          'Для пополнения через TON Wallet требуется адрес кошелька. Обратитесь в поддержку.',
+        );
+      }
+    }
+
     // Создание платежа через провайдера
     const paymentResult = await provider.createPayment({
       userId,
@@ -107,7 +128,7 @@ export class PaymentGatewayService {
       description,
       metadata: {
         ...metadata,
-        walletAddress: wallet.address,
+        walletAddress: walletAddress || wallet.address,
       },
       idempotencyKey: idempotencyKeyFinal,
     });
@@ -212,7 +233,7 @@ export class PaymentGatewayService {
       const updatedTransaction = await tx.transaction.update({
         where: { id: transaction.id },
         data: {
-          status: this.mapPaymentStatus(webhookData.status),
+          status: webhookData.status as any,
           processedAt: webhookData.timestamp,
           metadata: {
             ...(transaction.metadata as any),
@@ -264,7 +285,8 @@ export class PaymentGatewayService {
     );
 
     // Обновление статуса если изменился
-    if (providerStatus !== this.mapPaymentStatus(transaction.status)) {
+    const currentStatus = this.mapPaymentStatus(transaction.status as any);
+    if (providerStatus !== currentStatus) {
       await this.prisma.transaction.update({
         where: { id: transactionId },
         data: {

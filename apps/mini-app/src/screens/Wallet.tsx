@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { walletApi } from '../api/wallet';
 import { useAuthStore } from '../store/authStore';
 import Decimal from 'decimal.js';
 import { format } from 'date-fns';
+import { safeWebAppShowAlert, safeWebAppOpenInvoice } from '../utils/webapp';
 
 export default function Wallet() {
   const { t } = useTranslation();
@@ -21,8 +22,23 @@ export default function Wallet() {
     enabled: !!user,
   });
 
+  // Мутация для создания invoice
+  const createInvoiceMutation = useMutation({
+    mutationFn: (data: { provider: string; amount: number; currency: string; description?: string }) =>
+      walletApi.createPaymentInvoice(data),
+    onSuccess: (data) => {
+      // Открываем invoice через WebApp API
+      safeWebAppOpenInvoice(data.invoiceUrl);
+    },
+    onError: (error: any) => {
+      safeWebAppShowAlert(
+        error.response?.data?.message || error.message || 'Ошибка создания платежа',
+      );
+    },
+  });
+
   const internalWallet = wallets?.find((w) => w.type === 'internal' && w.isActive);
-  const tonBalance = internalWallet?.balances.find((b) => b.currency === 'TON');
+  const tonBalance = internalWallet?.balances?.find((b) => b.currency === 'TON');
 
   if (walletsLoading) {
     return (
@@ -41,22 +57,78 @@ export default function Wallet() {
         <p className="text-gray-600 mt-1">{t('wallet.subtitle')}</p>
       </div>
 
-      {tonBalance && (
-        <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-lg p-6 text-white">
-          <div className="text-sm opacity-90 mb-2">{t('wallet.totalBalance')}</div>
-          <div className="text-3xl font-bold mb-1">
-            {new Decimal(tonBalance.amount).toFixed(2)} TON
-          </div>
-          <div className="text-sm opacity-90 mt-2">
-            {t('wallet.available')}: {new Decimal(tonBalance.availableAmount).toFixed(2)} TON
-          </div>
-          {new Decimal(tonBalance.lockedAmount).gt(0) && (
-            <div className="text-sm opacity-90">
-              {t('wallet.locked')}: {new Decimal(tonBalance.lockedAmount).toFixed(2)} TON
+      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-lg p-6 text-white">
+        {tonBalance ? (
+          <>
+            <div className="text-sm opacity-90 mb-2">{t('wallet.totalBalance')}</div>
+            <div className="text-3xl font-bold mb-1">
+              {new Decimal(tonBalance.amount).toFixed(2)} TON
             </div>
+            <div className="text-sm opacity-90 mt-2">
+              {t('wallet.available')}: {new Decimal(tonBalance.availableAmount).toFixed(2)} TON
+            </div>
+            {new Decimal(tonBalance.lockedAmount).gt(0) && (
+              <div className="text-sm opacity-90">
+                {t('wallet.locked')}: {new Decimal(tonBalance.lockedAmount).toFixed(2)} TON
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-sm opacity-90 mb-2">{t('wallet.noBalance')}</div>
+        )}
+        <div className="mt-4 space-y-2">
+          <button
+            onClick={() => {
+              if (!user) {
+                safeWebAppShowAlert('Необходима авторизация');
+                return;
+              }
+              createInvoiceMutation.mutate({
+                provider: 'telegram_stars',
+                amount: 1,
+                currency: 'XTR',
+                description: 'Тестовое пополнение на 1 звезду',
+              });
+            }}
+            disabled={createInvoiceMutation.isPending}
+            className="w-full bg-white text-primary-600 py-2 px-4 rounded-lg font-semibold hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {createInvoiceMutation.isPending ? '⏳ Создание...' : `⭐ ${t('wallet.depositTest')} (1 ⭐)`}
+          </button>
+          <button
+            onClick={() => {
+              if (!user) {
+                safeWebAppShowAlert('Необходима авторизация');
+                return;
+              }
+              // Показываем меню выбора суммы для Stars
+              const amount = prompt('Введите сумму пополнения (Stars):', '10');
+              if (amount && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0) {
+                createInvoiceMutation.mutate({
+                  provider: 'telegram_stars',
+                  amount: Math.round(parseFloat(amount)),
+                  currency: 'XTR',
+                  description: `Пополнение на ${Math.round(parseFloat(amount))} Stars`,
+                });
+              }
+            }}
+            disabled={createInvoiceMutation.isPending}
+            className="w-full bg-white/20 text-white py-2 px-4 rounded-lg font-semibold hover:bg-white/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {createInvoiceMutation.isPending ? '⏳ Создание...' : `⭐ ${t('wallet.depositButton')} (Stars)`}
+          </button>
+          {tonBalance && new Decimal(tonBalance.availableAmount).gt(0) && (
+            <button
+              onClick={() => {
+                safeWebAppShowAlert('Функция вывода средств скоро будет доступна');
+              }}
+              className="w-full bg-white/20 text-white py-2 px-4 rounded-lg font-semibold hover:bg-white/30 transition-colors"
+            >
+              💸 {t('wallet.withdrawButton')}
+            </button>
           )}
         </div>
-      )}
+      </div>
 
       <div className="bg-white rounded-lg p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('wallet.wallets')}</h2>

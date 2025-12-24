@@ -262,7 +262,7 @@ export class MultiAccountDetectionService {
       await this.prisma.multiAccountCluster.update({
         where: { id: existingMember.clusterId },
         data: {
-          confidence: Math.max(confidence, existingMember.cluster.confidence),
+          confidence: Math.max(confidence, Number(existingMember.cluster.confidence)),
           evidence: {
             ...(existingMember.cluster.evidence as any),
             ...metadata,

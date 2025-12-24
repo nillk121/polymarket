@@ -40,7 +40,7 @@ export class MarketValidator {
   /**
    * Проверка статуса рынка
    */
-  validateMarketStatus(market: any, allowedStatuses: MarketStatus[]) {
+  validateMarketStatus(market: any, allowedStatuses: (MarketStatus | string)[]) {
     if (!allowedStatuses.includes(market.status)) {
       throw new BadRequestException(
         `Невозможно выполнить операцию на рынок со статусом ${market.status}. Разрешенные статусы: ${allowedStatuses.join(', ')}`,
@@ -52,7 +52,7 @@ export class MarketValidator {
    * Проверка активности рынка
    */
   validateMarketActive(market: any) {
-    this.validateMarketStatus(market, ['active', 'locked']);
+    this.validateMarketStatus(market, [MarketStatus.ACTIVE, MarketStatus.LOCKED]);
   }
 
   /**

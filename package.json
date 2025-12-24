@@ -20,7 +20,10 @@
     "dev:telegram-bot": "turbo run dev --filter=@polymarket/telegram-bot",
     "build:all": "turbo run build",
     "type-check": "turbo run type-check",
-    "install:all": "npm install"
+    "install:all": "npm install",
+    "tunnel:backend": "cloudflared tunnel --url http://localhost:3002",
+    "tunnel:mini-app": "cloudflared tunnel --url http://localhost:5173",
+    "tunnel:dashboard": "cloudflared tunnel --url http://localhost:3001"
   },
   "devDependencies": {
     "turbo": "^1.11.2",

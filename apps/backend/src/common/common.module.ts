@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../../prisma/prisma.module';
+import { PrismaModule } from '../prisma/prisma.module';
 import { MarketValidator } from './validators/market.validator';
 import { UserValidator } from './validators/user.validator';
 import { WalletValidator } from './validators/wallet.validator';

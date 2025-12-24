@@ -41,11 +41,11 @@ export class PayoutAuditService {
     try {
       await this.prisma.adminAuditLog.create({
         data: {
-          userId,
+          adminId: userId,
           action: 'payout_created',
           resourceType: 'payout',
           resourceId: payoutId,
-          details: auditLog as any,
+          newValues: auditLog as any,
         },
       });
     } catch (error) {
@@ -107,11 +107,11 @@ export class PayoutAuditService {
     try {
       await this.prisma.adminAuditLog.create({
         data: {
-          userId,
+          adminId: userId,
           action: 'payout_completed',
           resourceType: 'payout',
           resourceId: payoutId,
-          details: auditLog as any,
+          newValues: auditLog as any,
         },
       });
     } catch (error) {
@@ -147,11 +147,11 @@ export class PayoutAuditService {
     try {
       await this.prisma.adminAuditLog.create({
         data: {
-          userId,
+          adminId: userId,
           action: 'payout_failed',
           resourceType: 'payout',
           resourceId: payoutId,
-          details: auditLog as any,
+          newValues: auditLog as any,
         },
       });
     } catch (err) {

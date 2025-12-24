@@ -9,9 +9,11 @@ export default function Profile() {
   const { t } = useTranslation();
   const { user, logout } = useAuthStore();
 
-  const { data: bets } = useQuery({
+  const { data: bets, error: betsError } = useQuery({
     queryKey: ['bets', 'user'],
     queryFn: () => betsApi.getBets({ limit: 10 }),
+    enabled: !!user,
+    retry: false,
   });
 
   if (!user) {
@@ -68,7 +70,11 @@ export default function Profile() {
 
       <div className="bg-white rounded-lg p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('profile.recentBets')}</h2>
-        {bets?.bets.length === 0 ? (
+        {betsError ? (
+          <div className="text-center py-8 text-gray-500">
+            {t('errors.unauthorized')}
+          </div>
+        ) : bets?.bets.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             {t('profile.noBets')}
           </div>

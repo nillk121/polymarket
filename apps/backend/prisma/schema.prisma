@@ -20,6 +20,7 @@ model User {
   lastName      String?
   email         String?
   phone         String?
+  passwordHash  String?  @map("password_hash") // Для админ логина
   avatarUrl     String?  @map("avatar_url")
   isActive      Boolean  @default(true) @map("is_active")
   isVerified    Boolean  @default(false) @map("is_verified")
@@ -150,7 +151,7 @@ model Wallet {
   transactions Transaction[]
   payouts    Payout[]
 
-  @@unique([userId, type], where: { isActive: true })
+  @@unique([userId, type])
   @@index([userId])
   @@index([type])
   @@index([address])
@@ -362,6 +363,7 @@ model Transaction {
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   wallet              Wallet   @relation(fields: [walletId], references: [id])
   bet                 Bet?     @relation(fields: [betId], references: [id], onDelete: SetNull)
+  payout              Payout?
 
   @@index([userId])
   @@index([walletId])
@@ -383,7 +385,7 @@ model Payout {
   amount            Decimal   @db.Decimal(20, 8)
   currency          String    @default("TON")
   status            String    @default("pending") // pending, processing, completed, failed
-  transactionId     String?   @map("transaction_id")
+  transactionId     String?   @unique @map("transaction_id")
   externalPayoutId  String?   @map("external_payout_id")
   processedAt       DateTime? @map("processed_at")
   createdAt         DateTime  @default(now()) @map("created_at")

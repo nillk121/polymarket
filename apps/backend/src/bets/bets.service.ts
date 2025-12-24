@@ -6,6 +6,7 @@ import {
   ConflictException,
   Inject,
   forwardRef,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketsService } from '../markets/markets.service';
@@ -29,6 +30,8 @@ import Decimal from 'decimal.js';
 
 @Injectable()
 export class BetsService {
+  private readonly logger = new Logger(BetsService.name);
+
   constructor(
     private prisma: PrismaService,
     @Inject(forwardRef(() => MarketsService))

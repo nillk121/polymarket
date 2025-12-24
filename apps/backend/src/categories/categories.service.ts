@@ -68,16 +68,6 @@ export class CategoriesService {
    * С кэшированием
    */
   async findAll(query: QueryCategoryDto = {}) {
-    // Кэш ключ на основе параметров запроса
-    const cacheKey = `categories:list:${JSON.stringify(query)}`;
-    
-    // Проверяем кэш для активных категорий
-    if (!query.includeInactive) {
-      const cached = await this.cacheManager.get(cacheKey);
-      if (cached) {
-        return cached;
-      }
-    }
     const where: any = {};
 
     if (!query.includeInactive) {
@@ -91,7 +81,17 @@ export class CategoriesService {
       where.parentId = null;
     }
 
-    return this.prisma.category.findMany({
+    const cacheKey = `categories:list:${query.includeInactive ? 'all' : 'active'}:${query.includeChildren ? 'with-children' : 'no-children'}`;
+
+    // Проверяем кэш
+    if (!query.includeInactive) {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const categories = await this.prisma.category.findMany({
       where,
       orderBy: [
         { sortOrder: 'asc' },
@@ -225,10 +225,12 @@ export class CategoriesService {
   async update(id: string, updateCategoryDto: UpdateCategoryDto) {
     const category = await this.findOne(id);
 
+    const dto = updateCategoryDto as any;
+
     // Проверка уникальности slug
-    if (updateCategoryDto.slug && updateCategoryDto.slug !== category.slug) {
+    if (dto.slug && dto.slug !== category.slug) {
       const existing = await this.prisma.category.findUnique({
-        where: { slug: updateCategoryDto.slug },
+        where: { slug: dto.slug },
       });
 
       if (existing) {
@@ -237,15 +239,15 @@ export class CategoriesService {
     }
 
     // Проверка родительской категории (избегаем циклических ссылок)
-    if (updateCategoryDto.parentId) {
-      if (updateCategoryDto.parentId === id) {
+    if (dto.parentId) {
+      if (dto.parentId === id) {
         throw new BadRequestException(
           'Категория не может быть родителем самой себя',
         );
       }
 
       // Проверка, что родитель не является потомком текущей категории
-      const isDescendant = await this.isDescendant(id, updateCategoryDto.parentId);
+      const isDescendant = await this.isDescendant(id, dto.parentId);
       if (isDescendant) {
         throw new BadRequestException(
           'Категория не может быть родителем своего потомка',

@@ -6,6 +6,8 @@ import { authApi } from '@/lib/auth';
 
 const navigation = [
   { name: 'Дашборд', href: '/', icon: '📊' },
+  { name: 'Профиль', href: '/profile', icon: '👤' },
+  { name: 'Пользователи', href: '/users', icon: '👥' },
   { name: 'Аналитика', href: '/analytics', icon: '📈' },
   { name: 'Когорты', href: '/analytics/cohorts', icon: '👥' },
   { name: 'Рынки', href: '/markets', icon: '🎯' },

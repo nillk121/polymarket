@@ -134,6 +134,19 @@ export const adminApi = {
   getAuditLogs: (params?: { page?: number; limit?: number }) => {
     return api.get('/admin/audit-logs', { params });
   },
+  getUsersBalances: (params?: { page?: number; limit?: number; search?: string }) => {
+    return api.get('/admin/users/balances', { params });
+  },
+  adjustBalance: (data: {
+    userId: string;
+    walletId: string;
+    type: 'credit' | 'debit';
+    amount: number;
+    currency: string;
+    description?: string;
+  }) => {
+    return api.post('/admin/balance/adjust', data);
+  },
 };
 
 // Analytics API

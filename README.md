@@ -45,7 +45,52 @@ polymarket/
 - **Bot**: Grammy (Telegram Bot Framework)
 - **Smart Contracts**: FunC (TON)
 
-## Установка
+## 🚀 Быстрый старт
+
+### 1. Установка зависимостей
+
+```bash
+npm install
+```
+
+### 2. Настройка окружения
+
+Создайте `.env` файлы (шаблоны уже созданы, нужно только заполнить значения):
+
+- `apps/backend/.env` - настройте `DATABASE_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`
+- `apps/mini-app/.env` - уже настроен
+- `apps/telegram-bot/.env` - настройте `TELEGRAM_BOT_TOKEN`
+- `apps/web-dashboard/.env` - уже настроен
+
+**Подробнее:** [docs/ENV_SETUP.md](docs/ENV_SETUP.md)
+
+### 3. Настройка базы данных
+
+```bash
+cd apps/backend
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+```
+
+### 4. Запуск
+
+```bash
+# Запуск всех приложений
+npm run dev
+
+# Или отдельно:
+npm run dev:backend      # http://localhost:3000/api
+npm run dev:mini-app     # http://localhost:5173
+npm run dev:web-dashboard # http://localhost:3001
+npm run dev:telegram-bot
+```
+
+**Подробная инструкция:** [docs/QUICK_START.md](docs/QUICK_START.md)
+
+---
+
+## Установка (детально)
 
 ```bash
 npm install

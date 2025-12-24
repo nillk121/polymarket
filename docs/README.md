@@ -10,13 +10,19 @@
 
 ### Настройка и конфигурация
 - [ENV_SETUP.md](./ENV_SETUP.md) - Настройка переменных окружения
+- [INSTALL_WITHOUT_DOCKER.md](./INSTALL_WITHOUT_DOCKER.md) - ⭐ Установка БЕЗ Docker
+- [DOCKER_INSTALL.md](./DOCKER_INSTALL.md) - Установка Docker (если нужен)
 
 ### Аудит и рефакторинг
+- **[FINAL_AUDIT_REPORT.md](./FINAL_AUDIT_REPORT.md)** - ⭐ Финальный отчет аудита проекта
 - [AUDIT_REPORT.md](./AUDIT_REPORT.md) - Полный отчет аудита
 - [AUDIT_SUMMARY.md](./AUDIT_SUMMARY.md) - Краткое резюме аудита
+- [PROJECT_STATUS.md](./PROJECT_STATUS.md) - Статус готовности проекта
+- [PROJECT_CHECK_REPORT.md](./PROJECT_CHECK_REPORT.md) - Отчет проверки проекта
+- [PROJECT_STRUCTURE_AUDIT.md](./PROJECT_STRUCTURE_AUDIT.md) - Аудит структуры проекта
 - [REFACTORING_PLAN.md](./REFACTORING_PLAN.md) - План рефакторинга
 - [REFACTORING_COMPLETED.md](./REFACTORING_COMPLETED.md) - Выполненный рефакторинг
-- [PROJECT_CHECK_REPORT.md](./PROJECT_CHECK_REPORT.md) - Отчет проверки проекта
+- [CLEANUP_COMPLETED.md](./CLEANUP_COMPLETED.md) - Отчет об очистке проекта
 - [FINAL_CHECKLIST.md](./FINAL_CHECKLIST.md) - Финальный чеклист
 - [SUMMARY.md](./SUMMARY.md) - Краткое резюме проверки
 
@@ -92,4 +98,8 @@
 1. [AUDIT_REPORT.md](./AUDIT_REPORT.md) - Полный отчет
 2. [AUDIT_SUMMARY.md](./AUDIT_SUMMARY.md) - Краткое резюме
 3. [REFACTORING_COMPLETED.md](./REFACTORING_COMPLETED.md) - Выполненные улучшения
+4. [PROJECT_CHECK_REPORT.md](./PROJECT_CHECK_REPORT.md) - Отчет проверки проекта
+5. [CLEANUP_COMPLETED.md](./CLEANUP_COMPLETED.md) - Отчет об очистке проекта
+6. [FINAL_CHECKLIST.md](./FINAL_CHECKLIST.md) - Финальный чеклист
+7. [SUMMARY.md](./SUMMARY.md) - Краткое резюме проверки
 

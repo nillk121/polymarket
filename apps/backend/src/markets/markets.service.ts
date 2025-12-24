@@ -17,6 +17,7 @@ import { PayoutsService } from '../payouts/payouts.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
+import { CategoryValidator } from '../common/validators/category.validator';
 
 @Injectable()
 export class MarketsService {

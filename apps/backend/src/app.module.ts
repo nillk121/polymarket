@@ -45,24 +45,48 @@ import { CommonModule } from './common/common.module';
       },
     ]),
 
-    // Redis cache
+    // Redis cache (опционально - будет работать без Redis, просто без кэширования)
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => {
-        const redis = new Redis({
-          host: process.env.REDIS_HOST || 'localhost',
-          port: parseInt(process.env.REDIS_PORT || '6379'),
-          password: process.env.REDIS_PASSWORD,
-        });
-        
-        const store = await redisStore({
-          client: redis,
-        });
-        
-        return {
-          store,
-          ttl: 300, // 5 minutes default TTL
-        };
+        try {
+          const redis = new Redis({
+            host: process.env.REDIS_HOST || 'localhost',
+            port: parseInt(process.env.REDIS_PORT || '6379'),
+            password: process.env.REDIS_PASSWORD,
+            retryStrategy: (times) => {
+              // Если Redis недоступен, не пытаемся переподключаться
+              return null;
+            },
+            maxRetriesPerRequest: 1,
+            lazyConnect: true,
+          });
+          
+          // Пытаемся подключиться, но не падаем если не получилось
+          try {
+            await redis.connect();
+            const store = await redisStore({
+              client: redis,
+            });
+            
+            return {
+              store,
+              ttl: 300, // 5 minutes default TTL
+            };
+          } catch (error) {
+            // Redis недоступен - используем in-memory кэш
+            console.warn('Redis недоступен, используется in-memory кэш');
+            return {
+              ttl: 300,
+            };
+          }
+        } catch (error) {
+          // Если вообще не удалось инициализировать - используем in-memory
+          console.warn('Redis недоступен, используется in-memory кэш');
+          return {
+            ttl: 300,
+          };
+        }
       },
     }),
 

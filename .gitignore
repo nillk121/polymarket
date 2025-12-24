@@ -50,3 +50,7 @@ temp/
 # TON
 *.fif
 *.fift
+
+# Old unused directories
+backend/
+frontend/

@@ -100,14 +100,6 @@ export class BetsService {
       this.walletValidator.validateWalletOwnership(wallet, userId);
       this.walletValidator.validateWalletActive(wallet);
 
-      // Проверка баланса будет позже после расчета стоимости
-        throw new ForbiddenException('Кошелек принадлежит другому пользователю');
-      }
-
-      if (!wallet.isActive) {
-        throw new BadRequestException('Кошелек неактивен');
-      }
-
       // 6. Создание состояния рынка для pricing engine
       const marketState: MarketState = {
         id: market.id,

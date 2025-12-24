@@ -3,15 +3,21 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { QueryCategoryDto } from './dto/query-category.dto';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) {}
 
   /**
    * Создание категории
@@ -59,8 +65,19 @@ export class CategoriesService {
 
   /**
    * Получение всех категорий
+   * С кэшированием
    */
   async findAll(query: QueryCategoryDto = {}) {
+    // Кэш ключ на основе параметров запроса
+    const cacheKey = `categories:list:${JSON.stringify(query)}`;
+    
+    // Проверяем кэш для активных категорий
+    if (!query.includeInactive) {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
     const where: any = {};
 
     if (!query.includeInactive) {
@@ -118,6 +135,13 @@ export class CategoriesService {
             },
           },
     });
+
+    // Кэшируем результат на 5 минут для активных категорий
+    if (!query.includeInactive) {
+      await this.cacheManager.set(cacheKey, categories, 5 * 60 * 1000);
+    }
+
+    return categories;
   }
 
   /**
@@ -255,6 +279,10 @@ export class CategoriesService {
    */
   async remove(id: string) {
     const category = await this.findOne(id);
+    
+    // Инвалидация кэша при удалении
+    await this.cacheManager.del(`categories:list:*`);
+    await this.cacheManager.del(`categories:${id}`);
 
     // Проверка наличия дочерних категорий
     const childrenCount = await this.prisma.category.count({

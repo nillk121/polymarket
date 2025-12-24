@@ -14,6 +14,9 @@ import { UpdateMarketDto, MarketStatus } from './dto/update-market.dto';
 import { ResolveMarketDto } from './dto/resolve-market.dto';
 import { QueryMarketDto } from './dto/query-market.dto';
 import { PayoutsService } from '../payouts/payouts.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject } from '@nestjs/common';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class MarketsService {
@@ -24,6 +27,7 @@ export class MarketsService {
     @Inject(forwardRef(() => PayoutsService))
     private payoutsService: PayoutsService,
     private categoryValidator: CategoryValidator,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
   /**
@@ -201,13 +205,20 @@ export class MarketsService {
       this.prisma.market.count({ where }),
     ]);
 
-    return {
+    const result = {
       markets,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
     };
+
+    // Кэшируем результат на 60 секунд для активных рынков
+    if (!query.status || query.status === 'active') {
+      await this.cacheManager.set(cacheKey, result, 60 * 1000);
+    }
+
+    return result;
   }
 
   /**
@@ -361,6 +372,9 @@ export class MarketsService {
       throw new BadRequestException('Рынок должен иметь хотя бы один исход');
     }
 
+    // Инвалидация кэша при активации
+    await this.cacheManager.del(`markets:list:*`);
+    
     return this.prisma.market.update({
       where: { id },
       data: {
@@ -387,6 +401,9 @@ export class MarketsService {
       );
     }
 
+    // Инвалидация кэша при блокировке
+    await this.cacheManager.del(`markets:list:*`);
+    
     return this.prisma.market.update({
       where: { id },
       data: {
@@ -405,6 +422,10 @@ export class MarketsService {
    * Разрешение рынка (только для админов)
    */
   async resolve(id: string, resolveMarketDto: ResolveMarketDto, userId: string) {
+    // Инвалидация кэша при разрешении
+    await this.cacheManager.del(`markets:list:*`);
+    await this.cacheManager.del(`markets:${id}`);
+    
     const market = await this.findOne(id);
 
     // Рынок должен быть в статусе active или locked
@@ -481,6 +502,10 @@ export class MarketsService {
    * Отмена рынка
    */
   async cancel(id: string, userId: string) {
+    // Инвалидация кэша при отмене
+    await this.cacheManager.del(`markets:list:*`);
+    await this.cacheManager.del(`markets:${id}`);
+    
     const market = await this.findOne(id);
 
     // Рынок можно отменить только если он не разрешен

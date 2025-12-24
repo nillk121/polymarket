@@ -1,0 +1,35 @@
+{
+  "name": "polymarket-telegram",
+  "version": "1.0.0",
+  "description": "Polymarket-like prediction market platform for Telegram - Monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "dev:backend": "turbo run dev --filter=@polymarket/backend",
+    "dev:mini-app": "turbo run dev --filter=@polymarket/mini-app",
+    "dev:web-dashboard": "turbo run dev --filter=@polymarket/web-dashboard",
+    "dev:telegram-bot": "turbo run dev --filter=@polymarket/telegram-bot",
+    "build:all": "turbo run build",
+    "type-check": "turbo run type-check",
+    "install:all": "npm install"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.2",
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "packageManager": "npm@9.9.0"
+}

@@ -1,0 +1,605 @@
+// Prisma Schema for Polymarket Telegram Platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USERS & AUTHENTICATION
+// ============================================
+
+model User {
+  id            String   @id @default(uuid())
+  telegramId    String   @unique
+  username      String?
+  firstName     String?
+  lastName      String?
+  email         String?
+  phone         String?
+  avatarUrl     String?  @map("avatar_url")
+  isActive      Boolean  @default(true) @map("is_active")
+  isVerified    Boolean  @default(false) @map("is_verified")
+  isBanned      Boolean  @default(false) @map("is_banned")
+  bannedUntil   DateTime? @map("banned_until")
+  banReason     String?  @map("ban_reason") @db.Text
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  roles         UserRole[]
+  wallets       Wallet[]
+  bets          Bet[]
+  transactions  Transaction[]
+  payouts       Payout[]
+  markets       Market[] @relation("MarketCreator")
+  liquidityPools LiquidityPool[]
+  posts         Post[]
+  postTemplates PostTemplate[]
+  referralLinks ReferralLink[]
+  referrerReferrals UserReferral[] @relation("Referrer")
+  referredReferrals UserReferral[] @relation("Referred")
+  analyticsEvents AnalyticsEvent[]
+  adminAuditLogs AdminAuditLog[]
+
+  @@index([telegramId])
+  @@index([username])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?  @db.Text
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@index([name])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?  @db.Text
+  resource    String?
+  action      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  roles       RolePermission[]
+
+  @@index([name])
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id")
+  roleId     String   @map("role_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  assignedBy String?  @map("assigned_by")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+// ============================================
+// WALLETS & BALANCES
+// ============================================
+
+model Wallet {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  type       String   // telegram_wallet, ton_wallet, internal
+  address    String?
+  isActive   Boolean  @default(true) @map("is_active")
+  isVerified Boolean  @default(false) @map("is_verified")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balances   Balance[]
+  bets       Bet[]
+  transactions Transaction[]
+  payouts    Payout[]
+
+  @@unique([userId, type], where: { isActive: true })
+  @@index([userId])
+  @@index([type])
+  @@index([address])
+  @@map("wallets")
+}
+
+model Balance {
+  id             String   @id @default(uuid())
+  walletId       String   @map("wallet_id")
+  currency       String   @default("TON")
+  amount         Decimal  @default(0) @db.Decimal(20, 8)
+  lockedAmount   Decimal  @default(0) @map("locked_amount") @db.Decimal(20, 8)
+  availableAmount Decimal @default(0) @map("available_amount") @db.Decimal(20, 8)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  wallet         Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, currency])
+  @@index([walletId])
+  @@index([currency])
+  @@map("balances")
+}
+
+// ============================================
+// MARKETS & OUTCOMES
+// ============================================
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?   @db.Text
+  iconUrl     String?   @map("icon_url")
+  parentId    String?   @map("parent_id")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryHierarchy")
+  markets     Market[]
+
+  @@index([slug])
+  @@index([parentId])
+  @@index([isActive])
+  @@map("categories")
+}
+
+model Market {
+  id                String    @id @default(uuid())
+  title             String    @db.VarChar(500)
+  slug              String    @unique
+  description       String    @db.Text
+  categoryId        String?   @map("category_id")
+  status            String    @default("draft") // draft, active, locked, resolved, cancelled
+  type              String    @default("binary") // binary, multi
+  pricingModel      String    @default("lmsr") @map("pricing_model") // lmsr, constant_product
+  liquidity         Decimal   @default(0) @db.Decimal(20, 8)
+  totalVolume       Decimal   @default(0) @map("total_volume") @db.Decimal(20, 8)
+  totalBets         Int       @default(0) @map("total_bets")
+  resolvedOutcomeId String?   @map("resolved_outcome_id")
+  resolutionDate    DateTime? @map("resolution_date")
+  endDate           DateTime? @map("end_date")
+  imageUrl          String?   @map("image_url")
+  telegramChannelId String?   @map("telegram_channel_id")
+  telegramMessageId String?   @map("telegram_message_id")
+  createdById       String    @map("created_by_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  category          Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  creator           User      @relation("MarketCreator", fields: [createdById], references: [id])
+  outcomes          Outcome[]
+  liquidityPools    LiquidityPool[]
+  bets              Bet[]
+  posts             Post[]
+  analyticsEvents   AnalyticsEvent[]
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@index([endDate])
+  @@index([resolutionDate])
+  @@index([telegramChannelId])
+  @@map("markets")
+}
+
+model Outcome {
+  id          String   @id @default(uuid())
+  marketId    String   @map("market_id")
+  title       String
+  description String?  @db.Text
+  probability Decimal  @default(0.5) @db.Decimal(10, 8)
+  shares      Decimal  @default(0) @db.Decimal(20, 8)
+  totalVolume Decimal  @default(0) @map("total_volume") @db.Decimal(20, 8)
+  isResolved  Boolean  @default(false) @map("is_resolved")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  market      Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  liquidityPools LiquidityPool[]
+  bets        Bet[]
+
+  @@index([marketId])
+  @@index([isResolved])
+  @@index([marketId, isResolved])
+  @@map("outcomes")
+}
+
+model LiquidityPool {
+  id             String   @id @default(uuid())
+  marketId       String   @map("market_id")
+  outcomeId      String?  @map("outcome_id")
+  providerId     String   @map("provider_id")
+  amount         Decimal  @db.Decimal(20, 8)
+  feeRate       Decimal  @default(0) @map("fee_rate") @db.Decimal(10, 8)
+  totalFeesEarned Decimal @default(0) @map("total_fees_earned") @db.Decimal(20, 8)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  outcome        Outcome? @relation(fields: [outcomeId], references: [id], onDelete: SetNull)
+  provider       User     @relation(fields: [providerId], references: [id])
+
+  @@index([marketId])
+  @@index([outcomeId])
+  @@index([providerId])
+  @@index([isActive])
+  @@map("liquidity_pools")
+}
+
+// ============================================
+// BETS & TRANSACTIONS
+// ============================================
+
+model Bet {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  marketId       String   @map("market_id")
+  outcomeId      String   @map("outcome_id")
+  walletId       String   @map("wallet_id")
+  type           String   // buy, sell
+  shares         Decimal  @db.Decimal(20, 8)
+  price          Decimal  @db.Decimal(20, 8)
+  totalCost      Decimal  @map("total_cost") @db.Decimal(20, 8)
+  potentialPayout Decimal? @map("potential_payout") @db.Decimal(20, 8)
+  status         String   @default("pending") // pending, active, won, lost, cancelled, refunded
+  referralCode   String?  @map("referral_code")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  resolvedAt     DateTime? @map("resolved_at")
+
+  // Relations
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  market         Market   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  outcome        Outcome  @relation(fields: [outcomeId], references: [id], onDelete: Cascade)
+  wallet         Wallet   @relation(fields: [walletId], references: [id])
+  transactions   Transaction[]
+  payouts        Payout[]
+  userReferrals  UserReferral[]
+  analyticsEvents AnalyticsEvent[]
+
+  @@index([userId])
+  @@index([marketId])
+  @@index([outcomeId])
+  @@index([walletId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, marketId])
+  @@index([marketId, status])
+  @@map("bets")
+}
+
+model Transaction {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  walletId            String   @map("wallet_id")
+  betId               String?  @map("bet_id")
+  type                String   // deposit, withdrawal, bet_placed, bet_won, bet_lost, refund, commission, referral_bonus, admin_adjustment
+  status              String   @default("pending") // pending, completed, failed, cancelled
+  amount              Decimal  @db.Decimal(20, 8)
+  currency            String   @default("TON")
+  fee                 Decimal  @default(0) @db.Decimal(20, 8)
+  netAmount           Decimal  @default(0) @map("net_amount") @db.Decimal(20, 8)
+  externalTransactionId String? @map("external_transaction_id")
+  metadata            Json?
+  errorMessage        String?  @map("error_message") @db.Text
+  processedAt         DateTime? @map("processed_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet              Wallet   @relation(fields: [walletId], references: [id])
+  bet                 Bet?     @relation(fields: [betId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([betId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@index([externalTransactionId])
+  @@index([userId, type])
+  @@index([userId, status])
+  @@map("transactions")
+}
+
+model Payout {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  betId             String    @map("bet_id")
+  walletId          String    @map("wallet_id")
+  amount            Decimal   @db.Decimal(20, 8)
+  currency          String    @default("TON")
+  status            String    @default("pending") // pending, processing, completed, failed
+  transactionId     String?   @map("transaction_id")
+  externalPayoutId  String?   @map("external_payout_id")
+  processedAt       DateTime? @map("processed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bet               Bet       @relation(fields: [betId], references: [id], onDelete: Cascade)
+  wallet            Wallet    @relation(fields: [walletId], references: [id])
+  transaction       Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([userId])
+  @@index([betId])
+  @@index([walletId])
+  @@index([status])
+  @@index([transactionId])
+  @@index([createdAt])
+  @@map("payouts")
+}
+
+// ============================================
+// TELEGRAM INTEGRATION
+// ============================================
+
+model TelegramChannel {
+  id              String   @id @default(uuid())
+  channelId       String   @unique @map("channel_id")
+  channelUsername String?  @map("channel_username")
+  channelTitle    String?  @map("channel_title")
+  channelType     String?  @map("channel_type")
+  isActive        Boolean  @default(true) @map("is_active")
+  isVerified      Boolean  @default(false) @map("is_verified")
+  subscriberCount Int      @default(0) @map("subscriber_count")
+  settings        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  posts           Post[]
+
+  @@index([channelId])
+  @@index([channelUsername])
+  @@index([isActive])
+  @@map("telegram_channels")
+}
+
+model Post {
+  id               String    @id @default(uuid())
+  channelId        String?   @map("channel_id")
+  templateId       String?   @map("template_id")
+  marketId         String?   @map("market_id")
+  title            String?   @db.VarChar(500)
+  content          String    @db.Text
+  status           String    @default("draft") // draft, scheduled, published, archived
+  scheduledAt      DateTime? @map("scheduled_at")
+  publishedAt      DateTime? @map("published_at")
+  telegramMessageId String?  @map("telegram_message_id")
+  viewsCount       Int       @default(0) @map("views_count")
+  clicksCount      Int       @default(0) @map("clicks_count")
+  createdById      String    @map("created_by_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  channel          TelegramChannel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  template         PostTemplate? @relation(fields: [templateId], references: [id])
+  market           Market? @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  creator          User    @relation(fields: [createdById], references: [id])
+
+  @@index([channelId])
+  @@index([templateId])
+  @@index([marketId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([publishedAt])
+  @@index([createdById])
+  @@map("posts")
+}
+
+model PostTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  content     String   @db.Text
+  variables   Json?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator     User     @relation(fields: [createdById], references: [id])
+  posts       Post[]
+
+  @@index([name])
+  @@index([isActive])
+  @@index([createdById])
+  @@map("post_templates")
+}
+
+// ============================================
+// REFERRAL SYSTEM
+// ============================================
+
+model ReferralLink {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  code        String   @unique
+  name        String?
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  maxUses     Int?     @map("max_uses")
+  currentUses Int      @default(0) @map("current_uses")
+  bonusRate   Decimal  @default(0) @map("bonus_rate") @db.Decimal(10, 8)
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userReferrals UserReferral[]
+
+  @@index([code])
+  @@index([userId])
+  @@index([isActive])
+  @@map("referral_links")
+}
+
+model UserReferral {
+  id            String   @id @default(uuid())
+  referrerId    String   @map("referrer_id")
+  referredId    String   @unique @map("referred_id")
+  referralLinkId String? @map("referral_link_id")
+  firstBetId    String?  @map("first_bet_id")
+  totalEarned   Decimal  @default(0) @map("total_earned") @db.Decimal(20, 8)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  referrer      User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred      User     @relation("Referred", fields: [referredId], references: [id], onDelete: Cascade)
+  referralLink  ReferralLink? @relation(fields: [referralLinkId], references: [id], onDelete: SetNull)
+  firstBet      Bet?     @relation(fields: [firstBetId], references: [id], onDelete: SetNull)
+
+  @@index([referrerId])
+  @@index([referredId])
+  @@index([referralLinkId])
+  @@index([isActive])
+  @@map("user_referrals")
+}
+
+// ============================================
+// ANALYTICS & TRACKING
+// ============================================
+
+model TrafficSource {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // direct, referral, telegram, social, paid
+  code      String?  @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  analyticsEvents AnalyticsEvent[]
+
+  @@index([code])
+  @@index([type])
+  @@index([isActive])
+  @@map("traffic_sources")
+}
+
+model AnalyticsEvent {
+  id              String    @id @default(uuid())
+  userId          String?   @map("user_id")
+  marketId        String?   @map("market_id")
+  betId           String?   @map("bet_id")
+  eventType       String    @map("event_type")
+  metadata        Json?
+  ipAddress       String?   @map("ip_address")
+  userAgent       String?   @map("user_agent") @db.Text
+  referrer        String?   @db.Text
+  utmSource       String?   @map("utm_source")
+  utmMedium       String?   @map("utm_medium")
+  utmCampaign     String?   @map("utm_campaign")
+  utmTerm         String?   @map("utm_term")
+  utmContent      String?   @map("utm_content")
+  referralCode    String?   @map("referral_code")
+  trafficSourceId String?   @map("traffic_source_id")
+  sessionId       String?   @map("session_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  market          Market?   @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  bet             Bet?      @relation(fields: [betId], references: [id], onDelete: SetNull)
+  trafficSource   TrafficSource? @relation(fields: [trafficSourceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([marketId])
+  @@index([betId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([sessionId])
+  @@index([referralCode])
+  @@index([trafficSourceId])
+  @@index([userId, eventType])
+  @@index([createdAt, eventType])
+  @@map("analytics_events")
+}
+
+// ============================================
+// ADMIN & AUDIT
+// ============================================
+
+model AdminAuditLog {
+  id           String   @id @default(uuid())
+  adminId      String   @map("admin_id")
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  admin        User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@index([adminId, action])
+  @@map("admin_audit_logs")
+}

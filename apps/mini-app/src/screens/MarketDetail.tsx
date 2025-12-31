@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useParams, Link } from 'react-router-dom';
-import { marketsApi, Market } from '../api/markets';
+import { marketsApi } from '../api/markets';
 import Decimal from 'decimal.js';
 import { formatDistanceToNow } from 'date-fns';
 

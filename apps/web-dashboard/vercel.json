@@ -1,0 +1,15 @@
+{
+  "buildCommand": "cd ../.. && npm install && npm run build --filter=web-dashboard",
+  "outputDirectory": "apps/web-dashboard/.next",
+  "devCommand": "cd ../.. && npm run dev:web-dashboard",
+  "installCommand": "cd ../.. && npm install",
+  "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
+}
+
+

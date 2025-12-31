@@ -147,6 +147,9 @@ if (!botToken) {
 
   // Обработка нажатия на кнопку Mini App с путем
   bot.callbackQuery(/^open_mini_app:(.+)$/, async (ctx: Context) => {
+    if (!ctx.callbackQuery || !ctx.callbackQuery.data) {
+      return;
+    }
     const match = ctx.callbackQuery.data.match(/^open_mini_app:(.+)$/);
     const path = match ? match[1] : '';
     const miniAppUrl = process.env.MINI_APP_URL || 'http://localhost:5173';
@@ -161,6 +164,9 @@ if (!botToken) {
 
   // Обработка пополнения баланса
   bot.callbackQuery(/^deposit:(.+)$/, async (ctx: Context) => {
+    if (!ctx.callbackQuery || !ctx.callbackQuery.data) {
+      return;
+    }
     const match = ctx.callbackQuery.data.match(/^deposit:(.+)$/);
     const action = match ? match[1] : '';
     
@@ -179,6 +185,9 @@ if (!botToken) {
 
   // Обработка выбора суммы пополнения
   bot.callbackQuery(/^deposit_amount:(.+):(.+)$/, async (ctx: Context) => {
+    if (!ctx.callbackQuery || !ctx.callbackQuery.data) {
+      return;
+    }
     const match = ctx.callbackQuery.data.match(/^deposit_amount:(.+):(.+)$/);
     if (match) {
       const provider = match[1];
@@ -190,6 +199,9 @@ if (!botToken) {
 
   // Обработка кнопки "Скопировать адрес" для TON Wallet
   bot.callbackQuery(/^copy_address:(.+)$/, async (ctx: Context) => {
+    if (!ctx.callbackQuery || !ctx.callbackQuery.data) {
+      return;
+    }
     const match = ctx.callbackQuery.data.match(/^copy_address:(.+)$/);
     if (match) {
       const address = match[1];

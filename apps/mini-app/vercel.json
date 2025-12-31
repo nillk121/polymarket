@@ -1,0 +1,15 @@
+{
+  "buildCommand": "cd ../.. && npm install && npm run build --filter=mini-app",
+  "outputDirectory": "apps/mini-app/dist",
+  "devCommand": "cd ../.. && npm run dev:mini-app",
+  "installCommand": "cd ../.. && npm install",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+
+

@@ -114,8 +114,9 @@ class ApiClient {
             config.baseURL = this.fallbackUrl;
             const response = await localClient.request(config);
             return response;
-          } catch (fallbackError) {
-            console.error('❌ Fallback на localhost тоже не сработал:', fallbackError.message);
+          } catch (fallbackError: unknown) {
+            const errorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
+            console.error('❌ Fallback на localhost тоже не сработал:', errorMessage);
             throw error; // Возвращаем оригинальную ошибку
           }
         }

@@ -51,6 +51,6 @@ temp/
 *.fif
 *.fift
 
-# Old unused directories
-backend/
-frontend/
+# Old unused directories (only root level)
+/backend/
+/frontend/

@@ -1,0 +1,23 @@
+# Telegram Bot fly.toml для Fly.io
+app = "polymarket-telegram-bot"
+primary_region = "iad"
+
+[build]
+  dockerfile = "apps/telegram-bot/Dockerfile"
+  build_args = {}
+
+# Примечание: Деплой выполняется из корня репозитория
+# Build context: корень репозитория (откуда запускается команда)
+# Используйте: fly deploy --config apps/telegram-bot/fly.toml
+
+[env]
+  NODE_ENV = "production"
+
+[processes]
+  app = "node dist/index.js"
+
+# Это background worker, не требует HTTP сервиса
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

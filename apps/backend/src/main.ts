@@ -94,10 +94,11 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = configService.get('PORT') || 3002;
-  await app.listen(port);
+  // Слушаем на 0.0.0.0 для работы в Docker/Fly.io
+  await app.listen(port, '0.0.0.0');
   
   logger.log(`🚀 Сервер запущен на порту ${port}`);
-  logger.log(`📚 API доступен по адресу: http://localhost:${port}/api`);
+  logger.log(`📚 API доступен по адресу: http://0.0.0.0:${port}/api`);
 }
 
 bootstrap();

@@ -1,5 +1,6 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, Min, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaymentProviderType } from '../interfaces/payment-provider.interface';
 
 export class CreateInvoiceDto {
   @IsString()
@@ -16,6 +17,10 @@ export class CreateInvoiceDto {
   @IsOptional()
   currency?: string = 'TON';
 
+  @IsEnum(PaymentProviderType)
+  @IsNotEmpty()
+  provider: PaymentProviderType;
+
   @IsString()
   @IsOptional()
   description?: string;
@@ -23,5 +28,12 @@ export class CreateInvoiceDto {
   @IsString()
   @IsOptional()
   returnUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  idempotencyKey?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
 }
 

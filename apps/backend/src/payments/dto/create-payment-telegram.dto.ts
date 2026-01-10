@@ -1,7 +1,12 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, Min, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaymentProviderType } from '../interfaces/payment-provider.interface';
 
 export class CreatePaymentTelegramDto {
+  @IsString()
+  @IsNotEmpty()
+  telegramId: string;
+
   @IsString()
   @IsNotEmpty()
   walletId: string;
@@ -16,8 +21,19 @@ export class CreatePaymentTelegramDto {
   @IsOptional()
   currency?: string = 'TON';
 
+  @IsEnum(PaymentProviderType)
+  @IsNotEmpty()
+  provider: PaymentProviderType;
+
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsString()
+  @IsOptional()
+  idempotencyKey?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
 }
 
